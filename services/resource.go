@@ -1,0 +1,238 @@
+package services
+
+import (
+	"bytes"
+	"context"
+	"strings"
+	"time"
+
+	gcodes "google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"github.com/pkg/errors"
+
+	"github.com/anacrolix/torrent/metainfo"
+	"github.com/webtor-io/lazymap"
+
+	m2tp "github.com/webtor-io/magnet2torrent/magnet2torrent"
+	tsp "github.com/webtor-io/torrent-store/proto"
+)
+
+type ResourceType int
+
+const (
+	ResourceTypeHash ResourceType = iota
+	ResourceTypeMagnet
+	ResourceTypeTorrent
+	ResourceTypeSha1
+)
+
+type Resource struct {
+	ID        string
+	Name      string
+	Size      int64
+	Files     []*File
+	Type      ResourceType
+	MagnetURI string
+	Torrent   []byte
+}
+
+type File struct {
+	Path   []string
+	Size   int64
+	Pieces []Hash
+}
+
+const (
+	HashSize int = 20
+)
+
+type Hash [HashSize]byte
+
+func splitPieces(buf []byte) []Hash {
+	var chunk []byte
+	hashes := make([]Hash, 0, len(buf)/HashSize+1)
+	for len(buf) >= HashSize {
+		chunk, buf = buf[:HashSize], buf[HashSize:]
+		var h Hash
+		copy(h[:], chunk)
+		hashes = append(hashes, h)
+	}
+	return hashes
+}
+
+type ResourceMap struct {
+	lazymap.LazyMap
+	ts            TorrentStoreGetter
+	m2t           Magnet2TorrentGetter
+	magnetTimeout time.Duration
+}
+
+type TorrentStoreGetter interface {
+	Get() (tsp.TorrentStoreClient, error)
+}
+
+type Magnet2TorrentGetter interface {
+	Get() (m2tp.Magnet2TorrentClient, error)
+}
+
+func NewResourceMap(ts TorrentStoreGetter, m2t Magnet2TorrentGetter) *ResourceMap {
+	return &ResourceMap{
+		LazyMap: lazymap.New(&lazymap.Config{
+			Concurrency: 100,
+			Expire:      600 * time.Second,
+			ErrorExpire: 30 * time.Second,
+			Capacity:    1000,
+		}),
+		ts:            ts,
+		m2t:           m2t,
+		magnetTimeout: 3 * time.Minute,
+	}
+}
+
+func (s *ResourceMap) parseMagnet(b []byte) (*Resource, error) {
+	ma, err := metainfo.ParseMagnetUri(string(b))
+	if err != nil {
+		return nil, err
+	}
+	return &Resource{
+		ID:   ma.InfoHash.HexString(),
+		Type: ResourceTypeMagnet,
+	}, nil
+}
+
+func (s *ResourceMap) parseTorrent(b []byte) (*Resource, error) {
+	br := bytes.NewReader(b)
+	mi, err := metainfo.Load(br)
+	if err != nil {
+		return nil, err
+	}
+	i, err := mi.UnmarshalInfo()
+	if err != nil {
+		return nil, err
+	}
+	r := &Resource{
+		ID:   mi.HashInfoBytes().HexString(),
+		Name: i.Name,
+		Size: i.PieceLength * int64(i.NumPieces()),
+		Type: ResourceTypeTorrent,
+	}
+	pieces := splitPieces(i.Pieces)
+
+	if len(i.Files) == 0 {
+		r.Files = append(r.Files, &File{
+			Path:   []string{r.Name},
+			Size:   r.Size,
+			Pieces: pieces,
+		})
+	} else {
+		offset := int64(0)
+		for _, f := range i.Files {
+			start, end := offset/i.PieceLength, (offset+f.Length)/i.PieceLength
+			r.Files = append(r.Files, &File{
+				Path:   f.BestPath(),
+				Size:   f.Length,
+				Pieces: pieces[start : end+1],
+			})
+			offset += f.Length
+		}
+	}
+	r.MagnetURI = mi.Magnet(nil, &i).String()
+	r.Torrent = b
+	return r, nil
+}
+
+func (s *ResourceMap) parse(b []byte) (*Resource, error) {
+	if sha1R.Match(b) {
+		return &Resource{
+			ID:   string(b),
+			Type: ResourceTypeSha1,
+		}, nil
+	} else if strings.HasPrefix(string(b), "magnet:") {
+		r, err := s.parseMagnet(b)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to parse magnet")
+		}
+		return r, nil
+	} else {
+		r, err := s.parseTorrent(b)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to parse torrent")
+		}
+		return r, nil
+	}
+}
+
+func (s *ResourceMap) get(r *Resource, b []byte) (*Resource, error) {
+	ts, err := s.ts.Get()
+	if err != nil {
+		return nil, err
+	}
+	found := true
+	_, err = ts.Touch(context.Background(), &tsp.TouchRequest{InfoHash: r.ID})
+	if err != nil {
+		if st, ok := status.FromError(err); ok {
+			switch st.Code() {
+			case gcodes.PermissionDenied:
+				return nil, errors.Wrap(err, "forbidden")
+			case gcodes.NotFound:
+				found = false
+			default:
+				return nil, err
+			}
+		} else {
+			return nil, err
+		}
+	}
+	if found {
+		if r.Type == ResourceTypeTorrent {
+			return r, nil
+		} else {
+			rep, err := ts.Pull(context.Background(), &tsp.PullRequest{InfoHash: r.ID})
+			if err != nil {
+				return nil, err
+			}
+			return s.parseTorrent(rep.GetTorrent())
+		}
+	}
+	switch r.Type {
+	case ResourceTypeSha1:
+		return nil, errors.Errorf("not found sha1=%v", r.ID)
+	case ResourceTypeTorrent:
+		_, err := ts.Push(context.Background(), &tsp.PushRequest{Torrent: b})
+		if err != nil {
+			return nil, err
+		}
+		return r, nil
+
+	case ResourceTypeMagnet:
+		m2t, err := s.m2t.Get()
+		if err != nil {
+			return nil, err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), s.magnetTimeout)
+		defer cancel()
+		rep, err := m2t.Magnet2Torrent(ctx, &m2tp.Magnet2TorrentRequest{Magnet: string(b)})
+		if err != nil && ctx.Err() != nil {
+			return nil, errors.Wrap(err, "magnet timeout")
+		} else if err != nil {
+			return nil, err
+		}
+		return s.parseTorrent(rep.GetTorrent())
+	}
+	return nil, nil
+}
+
+func (s *ResourceMap) Get(b []byte) (*Resource, error) {
+	r, err := s.parse(b)
+	if err != nil {
+		return nil, err
+	}
+	res, err := s.LazyMap.Get(r.ID, func() (interface{}, error) {
+		return s.get(r, b)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return res.(*Resource), nil
+}

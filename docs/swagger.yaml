@@ -1,0 +1,332 @@
+definitions:
+  services.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  services.ExportItem:
+    properties:
+      html_tag:
+        $ref: '#/definitions/services.ExportTag'
+      url:
+        type: string
+    type: object
+  services.ExportResponse:
+    properties:
+      exports:
+        additionalProperties:
+          $ref: '#/definitions/services.ExportItem'
+        type: object
+      source:
+        $ref: '#/definitions/services.ListItem'
+    type: object
+  services.ExportSource:
+    properties:
+      src:
+        type: string
+      type:
+        type: string
+    type: object
+  services.ExportTag:
+    properties:
+      alt:
+        type: string
+      poster:
+        type: string
+      preload:
+        type: string
+      sources:
+        items:
+          $ref: '#/definitions/services.ExportSource'
+        type: array
+      src:
+        type: string
+      tag:
+        type: string
+      tracks:
+        items:
+          $ref: '#/definitions/services.ExportTrack'
+        type: array
+    type: object
+  services.ExportTrack:
+    properties:
+      kind:
+        type: string
+      label:
+        type: string
+      src:
+        type: string
+      srclang:
+        type: string
+    type: object
+  services.ListItem:
+    properties:
+      ext:
+        type: string
+      id:
+        type: string
+      media_format:
+        type: string
+      mime_type:
+        type: string
+      name:
+        type: string
+      path:
+        type: string
+      size:
+        type: integer
+      type:
+        type: string
+    type: object
+  services.ListResponse:
+    properties:
+      ext:
+        type: string
+      id:
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/services.ListItem'
+        type: array
+      items_count:
+        type: integer
+      media_format:
+        type: string
+      mime_type:
+        type: string
+      name:
+        type: string
+      path:
+        type: string
+      size:
+        type: integer
+      type:
+        type: string
+    type: object
+  services.ResourceResponse:
+    properties:
+      id:
+        type: string
+      magnet_uri:
+        type: string
+      name:
+        type: string
+    type: object
+info:
+  contact:
+    email: support@webtor.io
+    name: Webtor Support
+    url: https://webtor.io/support
+  description: Simple API to communicate with Webtor service.
+  title: Webtor API
+  version: "0.1"
+paths:
+  /resource/:
+    post:
+      consumes:
+      - '*/*'
+      description: |-
+        Receives torrent or magnet-uri in request body.
+        If magnet-uri provided instead of torrent, then it tries to fetch torrent from BitTorrent network (timeout 3 minutes).
+      parameters:
+      - description: resource
+        example: '"magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10&dn=Sintel&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&tr=wss%3A%2F%2Ftracker.fastcast.nz&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F"'
+        in: body
+        name: resource
+        required: true
+        schema:
+          type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/services.ResourceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/services.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/services.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/services.ErrorResponse'
+        "408":
+          description: Request Timeout
+          schema:
+            $ref: '#/definitions/services.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/services.ErrorResponse'
+      summary: Stores resource
+      tags:
+      - resource
+  /resource/{resource_id}:
+    get:
+      consumes:
+      - '*/*'
+      description: Receives id and returns resource.
+      parameters:
+      - description: resource_id
+        example: '"08ada5a7a6183aae1e09d831df6748d566095a10"'
+        in: path
+        name: resource_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/services.ResourceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/services.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/services.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/services.ErrorResponse'
+      summary: Returns resource
+      tags:
+      - resource
+  /resource/{resource_id}.torrent:
+    get:
+      consumes:
+      - '*/*'
+      description: Receives id and returns torrent for resource.
+      parameters:
+      - description: resource_id
+        example: '"08ada5a7a6183aae1e09d831df6748d566095a10"'
+        in: path
+        name: resource_id
+        required: true
+        type: string
+      produces:
+      - application/x-bittorrent
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/services.ResourceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/services.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/services.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/services.ErrorResponse'
+      summary: Returns torrent for resource
+      tags:
+      - resource
+  /resource/{resource_id}/export/{content_id}:
+    get:
+      consumes:
+      - '*/*'
+      description: Provides url for exporting resource content.
+      parameters:
+      - description: output
+        enum:
+        - download
+        - stream
+        - torrent_client_stat
+        - subtitles
+        - media_probe
+        in: query
+        name: output
+        type: string
+      - description: resource_id
+        example: '"08ada5a7a6183aae1e09d831df6748d566095a10"'
+        in: path
+        name: resource_id
+        required: true
+        type: string
+      - description: content_id
+        example: '"ca2453df3e7691c28934eebed5a253ee0aabd29f"'
+        in: path
+        name: content_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/services.ExportResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/services.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/services.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/services.ErrorResponse'
+      summary: Exports resource content
+      tags:
+      - export
+  /resource/{resource_id}/list:
+    get:
+      consumes:
+      - '*/*'
+      parameters:
+      - description: path
+        in: query
+        name: path
+        type: string
+      - description: limit
+        in: query
+        name: limit
+        type: integer
+      - description: offset
+        in: query
+        name: offset
+        type: integer
+      - description: output
+        enum:
+        - list
+        - tree
+        in: query
+        name: output
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/services.ListResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/services.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/services.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/services.ErrorResponse'
+      tags:
+      - list
+swagger: "2.0"
