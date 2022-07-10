@@ -164,7 +164,7 @@ func (s *BaseURLBuilder) BuildBaseURL(i *MyURL) (u *MyURL, err error) {
 	if s.g.Query("api-key") != "" {
 		q.Add("api-key", s.g.Query("api-key"))
 	} else if s.g.GetHeader("X-Api-Key") != "" {
-		q.Add("api-key", s.g.GetHeader("api-key"))
+		q.Add("api-key", s.g.GetHeader("X-Api-Key"))
 	}
 	u.RawQuery = q.Encode()
 	return

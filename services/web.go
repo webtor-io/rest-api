@@ -95,11 +95,15 @@ func (s *Web) postResource(g *gin.Context) {
 		g.Error(err)
 		return
 	}
-	g.PureJSON(http.StatusOK, &ResourceResponse{ID: r.ID, Name: r.Name})
+	g.PureJSON(http.StatusOK, &ResourceResponse{
+		ID:        r.ID,
+		Name:      r.Name,
+		MagnetURI: r.MagnetURI,
+	})
 }
 
 // @Summary Returns resource
-// @Description Receives id and returns resource.
+// @Description Receives resource id and returns resource.
 // @Schemes
 // @Param resource_id path string true "resource_id" example("08ada5a7a6183aae1e09d831df6748d566095a10")
 // @Tags  resource
