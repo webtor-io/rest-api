@@ -81,8 +81,9 @@ func NewResourceMap(ts TorrentStoreGetter, m2t Magnet2TorrentGetter) *ResourceMa
 		LazyMap: lazymap.New(&lazymap.Config{
 			Concurrency: 100,
 			Expire:      600 * time.Second,
-			ErrorExpire: 30 * time.Second,
+			// ErrorExpire: 30 * time.Second,
 			Capacity:    1000,
+			StoreErrors: false,
 		}),
 		ts:            ts,
 		m2t:           m2t,

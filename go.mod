@@ -81,7 +81,7 @@ require (
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	github.com/webtor-io/abuse-store v0.0.0-20210710111318-01e4ce3bdc7c // indirect
 	github.com/webtor-io/common-services v0.0.0-20220521124118-dfcf9bfc576e // indirect
-	github.com/webtor-io/lazymap v0.0.0-20211113172031-0d3df1e054bf // indirect
+	github.com/webtor-io/lazymap v0.0.0-20221030185154-1799721becef // indirect
 	github.com/webtor-io/magnet2torrent v0.0.0-20220312143110-bc1a7e4bcbba // indirect
 	github.com/webtor-io/torrent-store v0.0.0-20220312145903-14c004567eea // indirect
 	go.opencensus.io v0.23.0 // indirect
