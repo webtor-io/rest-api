@@ -219,6 +219,10 @@ func (s *ResourceMap) get(r *Resource, b []byte) (*Resource, error) {
 		} else if err != nil {
 			return nil, err
 		}
+		_, err = ts.Push(context.Background(), &tsp.PushRequest{Torrent: rep.GetTorrent()})
+		if err != nil {
+			return nil, err
+		}
 		return s.parseTorrent(rep.GetTorrent())
 	}
 	return nil, nil
