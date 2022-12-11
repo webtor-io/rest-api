@@ -11,8 +11,17 @@ import (
 
 type MyURL struct {
 	url.URL
-	cached    bool
-	transcode bool
+	cached       bool
+	transcode    bool
+	multibitrate bool
+}
+
+func (s *MyURL) BuildExportMeta() *ExportMeta {
+	return &ExportMeta{
+		Cache:        s.cached,
+		Transcode:    s.transcode,
+		Multibitrate: s.multibitrate,
+	}
 }
 
 type URLBuilder struct {
@@ -266,8 +275,10 @@ func (s *StreamURLBuilder) BuildTranscodeCacheURL(i *MyURL, multi bool, suffix s
 	u = i
 	prefix := "transcoder"
 	svc := ServiceTypeTranscodeCache
+	u.multibitrate = false
 	if multi {
 		prefix = "mb-transcoder"
+		u.multibitrate = true
 		svc = ServiceTypeMultibitrateTranscodeCache
 	}
 	c, err := s.tdm.Get(prefix, s.r.ID, "/"+s.r.Name+s.i.PathStr)

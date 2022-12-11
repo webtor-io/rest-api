@@ -166,6 +166,9 @@ func (s *DownloadExporter) Export(r *Resource, i *ListItem, g ParamGetter) (*Exp
 	return &ExportItem{
 		Type: string(s.Type()),
 		URL:  url.String(),
+		ExportMetaItem: ExportMetaItem{
+			Meta: url.BuildExportMeta(),
+		},
 	}, nil
 }
 
@@ -213,6 +216,9 @@ func (s *StreamExporter) Export(r *Resource, i *ListItem, g ParamGetter) (*Expor
 		Type:             string(s.Type()),
 		URL:              url.String(),
 		ExportStreamItem: *ei,
+		ExportMetaItem: ExportMetaItem{
+			Meta: url.BuildExportMeta(),
+		},
 	}, nil
 }
 

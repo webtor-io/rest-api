@@ -37,6 +37,7 @@ type ListResponse struct {
 
 type ExportItem struct {
 	ExportStreamItem
+	ExportMetaItem
 	Type string `json:"-"`
 	URL  string `json:"url,omitempty"`
 }
@@ -86,6 +87,16 @@ type ExportTag struct {
 
 type ExportStreamItem struct {
 	Tag *ExportTag `json:"html_tag,omitempty"`
+}
+
+type ExportMetaItem struct {
+	Meta *ExportMeta `json:"meta,omitempty"`
+}
+
+type ExportMeta struct {
+	Transcode    bool `json:"transcode,omitempty"`
+	Multibitrate bool `json:"multibitrate,omitempty"`
+	Cache        bool `json:"cache,omitempty"`
 }
 
 type ExportResponse struct {

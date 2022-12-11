@@ -8,8 +8,19 @@ definitions:
     properties:
       html_tag:
         $ref: '#/definitions/services.ExportTag'
+      meta:
+        $ref: '#/definitions/services.ExportMeta'
       url:
         type: string
+    type: object
+  services.ExportMeta:
+    properties:
+      cache:
+        type: boolean
+      multibitrate:
+        type: boolean
+      transcode:
+        type: boolean
     type: object
   services.ExportResponse:
     properties:
@@ -170,7 +181,7 @@ paths:
     get:
       consumes:
       - '*/*'
-      description: Receives id and returns resource.
+      description: Receives resource id and returns resource.
       parameters:
       - description: resource_id
         example: '"08ada5a7a6183aae1e09d831df6748d566095a10"'

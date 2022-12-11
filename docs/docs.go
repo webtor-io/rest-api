@@ -87,7 +87,7 @@ const docTemplate = `{
         },
         "/resource/{resource_id}": {
             "get": {
-                "description": "Receives id and returns resource.",
+                "description": "Receives resource id and returns resource.",
                 "consumes": [
                     "*/*"
                 ],
@@ -344,8 +344,25 @@ const docTemplate = `{
                 "html_tag": {
                     "$ref": "#/definitions/services.ExportTag"
                 },
+                "meta": {
+                    "$ref": "#/definitions/services.ExportMeta"
+                },
                 "url": {
                     "type": "string"
+                }
+            }
+        },
+        "services.ExportMeta": {
+            "type": "object",
+            "properties": {
+                "cache": {
+                    "type": "boolean"
+                },
+                "multibitrate": {
+                    "type": "boolean"
+                },
+                "transcode": {
+                    "type": "boolean"
                 }
             }
         },

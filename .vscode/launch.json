@@ -10,7 +10,7 @@
             "request": "launch",
             "mode": "auto",
             "program": "${workspaceRoot}",
-            "args": ["serve"],
+            "args": ["serve", "--port=9091", "--probe-port=9092"],
             "envFile": "${userHome}/.env"
         }
     ]
