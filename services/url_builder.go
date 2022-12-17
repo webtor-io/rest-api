@@ -135,7 +135,11 @@ const ServiceSeparator = "~"
 
 func (s *BaseURLBuilder) BuildBaseURL(i *MyURL) (u *MyURL, err error) {
 	u = i
-	u.Path = "/" + s.r.ID + "/" + strings.TrimRight(s.r.Name+s.i.PathStr, "/")
+	if len(s.r.Files) > 1 {
+		u.Path = "/" + s.r.ID + "/" + strings.TrimRight(s.r.Name+s.i.PathStr, "/")
+	} else {
+		u.Path = "/" + s.r.ID + "/" + strings.Trim(s.i.PathStr, "/")
+	}
 	pieces, err := s.cpm.Get(s.r.ID)
 	if err != nil {
 		return nil, err
