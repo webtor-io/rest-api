@@ -1,6 +1,6 @@
 module github.com/webtor-io/rest-api
 
-go 1.18
+go 1.21
 
 require (
 	code.cloudfoundry.org/bytefmt v0.0.0-20211005130812-5bb3c17173e5 // indirect

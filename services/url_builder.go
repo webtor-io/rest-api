@@ -9,6 +9,32 @@ import (
 	"github.com/urfave/cli"
 )
 
+const (
+	usePieceCache                 = "use-piece-cache"
+	useTranscodeCache             = "use-transcode-cache"
+	useTranscodeMultibitrateCache = "use-transcode-multibitrate-cache"
+)
+
+func RegisterUrlBuilderFlags(f []cli.Flag) []cli.Flag {
+	return append(f,
+		cli.BoolFlag{
+			Name:   usePieceCache,
+			Usage:  "use piece cache",
+			EnvVar: "USE_PIECE_CACHE",
+		},
+		cli.BoolFlag{
+			Name:   useTranscodeCache,
+			Usage:  "use transcode cache",
+			EnvVar: "USE_TRANSCODE_CACHE",
+		},
+		cli.BoolFlag{
+			Name:   useTranscodeMultibitrateCache,
+			Usage:  "use transcode multibitrate cache",
+			EnvVar: "USE_TRANSCODE_MULTIBITRATE_CACHE",
+		},
+	)
+}
+
 type MyURL struct {
 	url.URL
 	cached       bool
@@ -25,32 +51,41 @@ func (s *MyURL) BuildExportMeta() *ExportMeta {
 }
 
 type URLBuilder struct {
-	cpm    *CompletedPiecesMap
-	tdm    *TranscodeDoneMap
-	sd     *Subdomains
-	domain string
-	ssl    bool
+	cpm                           *CompletedPiecesMap
+	tdm                           *TranscodeDoneMap
+	sd                            *Subdomains
+	domain                        string
+	ssl                           bool
+	usePieceCache                 bool
+	useTranscodeCache             bool
+	useTranscodeMultibitrateCache bool
 }
 
 func NewURLBuilder(c *cli.Context, cpm *CompletedPiecesMap, tdm *TranscodeDoneMap, sd *Subdomains) *URLBuilder {
 	return &URLBuilder{
-		cpm:    cpm,
-		tdm:    tdm,
-		sd:     sd,
-		domain: c.String(exportDomainFlag),
-		ssl:    c.BoolT(exportSSLFlag),
+		cpm:                           cpm,
+		tdm:                           tdm,
+		sd:                            sd,
+		domain:                        c.String(exportDomainFlag),
+		ssl:                           c.BoolT(exportSSLFlag),
+		usePieceCache:                 c.Bool(usePieceCache),
+		useTranscodeCache:             c.Bool(useTranscodeCache),
+		useTranscodeMultibitrateCache: c.Bool(useTranscodeMultibitrateCache),
 	}
 }
 
 func (s *URLBuilder) Build(r *Resource, i *ListItem, g ParamGetter, et ExportType) (*MyURL, error) {
 	bubc := BaseURLBuilder{
-		cpm:    s.cpm,
-		sd:     s.sd,
-		r:      r,
-		i:      i,
-		g:      g,
-		domain: s.domain,
-		ssl:    s.ssl,
+		cpm:                           s.cpm,
+		sd:                            s.sd,
+		r:                             r,
+		i:                             i,
+		g:                             g,
+		domain:                        s.domain,
+		ssl:                           s.ssl,
+		usePieceCache:                 s.usePieceCache,
+		useTranscodeCache:             s.useTranscodeCache,
+		useTranscodeMultibitrateCache: s.useTranscodeMultibitrateCache,
 	}
 	switch et {
 	case ExportTypeDownload:
@@ -87,13 +122,16 @@ func (s *URLBuilder) Build(r *Resource, i *ListItem, g ParamGetter, et ExportTyp
 }
 
 type BaseURLBuilder struct {
-	cpm    *CompletedPiecesMap
-	sd     *Subdomains
-	r      *Resource
-	i      *ListItem
-	g      ParamGetter
-	domain string
-	ssl    bool
+	cpm                           *CompletedPiecesMap
+	sd                            *Subdomains
+	r                             *Resource
+	i                             *ListItem
+	g                             ParamGetter
+	domain                        string
+	ssl                           bool
+	usePieceCache                 bool
+	useTranscodeCache             bool
+	useTranscodeMultibitrateCache bool
 }
 
 type DownloadURLBuilder struct {
@@ -140,17 +178,19 @@ func (s *BaseURLBuilder) BuildBaseURL(i *MyURL) (u *MyURL, err error) {
 	} else {
 		u.Path = "/" + s.r.ID + "/" + strings.Trim(s.i.PathStr, "/")
 	}
-	pieces, err := s.cpm.Get(s.r.ID)
-	if err != nil {
-		return nil, err
-	}
-
 	cached := false
-	if len(pieces) > 0 {
-		for _, f := range s.r.Files {
-			if pathBeginsWith(f.Path, s.i.Path) && pieces.HasAny(f.Pieces) {
-				cached = true
-				break
+	if s.usePieceCache {
+		pieces, err := s.cpm.Get(s.r.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(pieces) > 0 {
+			for _, f := range s.r.Files {
+				if pathBeginsWith(f.Path, s.i.Path) && pieces.HasAny(f.Pieces) {
+					cached = true
+					break
+				}
 			}
 		}
 	}
@@ -313,13 +353,18 @@ func (s *StreamURLBuilder) BuildVODURL(i *MyURL, suffix string) (u *MyURL) {
 
 func (s *StreamURLBuilder) BuildVideoStreamURL(i *MyURL, suffix string) (u *MyURL, err error) {
 	u = i
-	u, ok, err := s.BuildTranscodeCacheURL(u, true, suffix)
-	if err != nil || ok {
-		return
+	ok := false
+	if s.useTranscodeMultibitrateCache {
+		u, ok, err = s.BuildTranscodeCacheURL(u, true, suffix)
+		if err != nil || ok {
+			return
+		}
 	}
-	u, ok, err = s.BuildTranscodeCacheURL(u, false, suffix)
-	if err != nil || ok {
-		return
+	if s.useTranscodeCache {
+		u, ok, err = s.BuildTranscodeCacheURL(u, false, suffix)
+		if err != nil || ok {
+			return
+		}
 	}
 	if shouldTranscode(s.i.Ext) {
 		u = s.BuildTranscodeURL(i, suffix)
@@ -332,9 +377,12 @@ func (s *StreamURLBuilder) BuildVideoStreamURL(i *MyURL, suffix string) (u *MyUR
 
 func (s *StreamURLBuilder) BuildAudioStreamURL(i *MyURL, suffix string) (u *MyURL, err error) {
 	u = i
-	u, ok, err := s.BuildTranscodeCacheURL(u, false, suffix)
-	if err != nil || ok {
-		return
+	ok := false
+	if s.useTranscodeCache {
+		u, ok, err = s.BuildTranscodeCacheURL(u, false, suffix)
+		if err != nil || ok {
+			return
+		}
 	}
 	if shouldTranscode(s.i.Ext) {
 		u = s.BuildTranscodeURL(i, suffix)
