@@ -22,6 +22,7 @@ func makeServeCMD() cli.Command {
 
 func configureServe(c *cli.Command) {
 	c.Flags = cs.RegisterProbeFlags(c.Flags)
+	c.Flags = s.RegisterUrlBuilderFlags((c.Flags))
 	c.Flags = s.RegisterWebFlags(c.Flags)
 	c.Flags = s.RegisterTorrentStoreFlags(c.Flags)
 	c.Flags = s.RegisterMagnet2TorrentFlags(c.Flags)
