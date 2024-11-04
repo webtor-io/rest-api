@@ -80,12 +80,12 @@ func NewNodesStat(c *cli.Context, pcl *PromClient, kcl *K8SClient) *NodesStat {
 	}
 }
 
-func (s *NodesStat) get() ([]NodeStat, error) {
-	ns, err := s.getKubeStats()
+func (s *NodesStat) get(ctx context.Context) ([]NodeStat, error) {
+	ns, err := s.getKubeStats(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to get stats from k8s")
 	}
-	ps, err := s.getPromStats(ns)
+	ps, err := s.getPromStats(ctx, ns)
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to get stats from prom")
 	}
@@ -108,13 +108,11 @@ func (s *NodesStat) get() ([]NodeStat, error) {
 // 	return float64(v) / d, nil
 // }
 
-func (s *NodesStat) getKubeStats() ([]NodeStat, error) {
+func (s *NodesStat) getKubeStats(ctx context.Context) ([]NodeStat, error) {
 	cl, err := s.kcl.Get()
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to get k8s client")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 	nodes, err := cl.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to get nodes")
@@ -189,7 +187,7 @@ func (s *NodesStat) getKubeStats() ([]NodeStat, error) {
 	return res, nil
 }
 
-func (s *NodesStat) getPromStats(ns []NodeStat) ([]NodeStat, error) {
+func (s *NodesStat) getPromStats(ctx context.Context, ns []NodeStat) ([]NodeStat, error) {
 	cl, err := s.pcl.Get()
 	if err != nil {
 		return nil, errors.Wrap(err, "Failed to get prometheus client")
@@ -197,8 +195,6 @@ func (s *NodesStat) getPromStats(ns []NodeStat) ([]NodeStat, error) {
 	if cl == nil {
 		return nil, nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
 	query := fmt.Sprintf("sum by (pod)(rate(node_network_transmit_bytes_total{device=~\"%s\"}[5m])) * on (pod) group_right kube_pod_info * 8", s.iface)
 	val, _, err := cl.Query(ctx, query, time.Now())
 	if err != nil {
@@ -234,9 +230,9 @@ func (s *NodesStat) getPromStats(ns []NodeStat) ([]NodeStat, error) {
 	return ns, nil
 }
 
-func (s *NodesStat) Get() ([]NodeStat, error) {
+func (s *NodesStat) Get(ctx context.Context) ([]NodeStat, error) {
 	res, err := s.LazyMap.Get("", func() (interface{}, error) {
-		return s.get()
+		return s.get(ctx)
 	})
 	if err != nil {
 		return nil, err

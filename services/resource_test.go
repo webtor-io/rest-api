@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"io"
 	"os"
 	"testing"
@@ -105,7 +106,7 @@ func TestResourceMap_getSha1NotFound(t *testing.T) {
 	rm := NewTestResourceMap()
 	tsclm, _ := rm.ts.Get()
 	tsclm.(*TorrentStoreClientMock).On("Touch", mock.Anything, mock.Anything, mock.Anything).Return(nil, status.Error(codes.NotFound, "not found"))
-	r, err := rm.Get([]byte("08ada5a7a6183aae1e09d831df6748d566095a10"))
+	r, err := rm.Get(context.Background(), []byte("08ada5a7a6183aae1e09d831df6748d566095a10"))
 	assert.Nil(r)
 	assert.NotNil(err)
 	assert.ErrorContains(err, "not found")
@@ -117,7 +118,7 @@ func TestResourceMap_getSha1Forbidden(t *testing.T) {
 	rm := NewTestResourceMap()
 	tsclm, _ := rm.ts.Get()
 	tsclm.(*TorrentStoreClientMock).On("Touch", mock.Anything, mock.Anything, mock.Anything).Return(nil, status.Error(codes.PermissionDenied, "forbidden"))
-	r, err := rm.Get([]byte("08ada5a7a6183aae1e09d831df6748d566095a10"))
+	r, err := rm.Get(context.Background(), []byte("08ada5a7a6183aae1e09d831df6748d566095a10"))
 	assert.Nil(r)
 	assert.NotNil(err)
 	assert.ErrorContains(err, "forbidden")
@@ -133,7 +134,7 @@ func TestResourceMap_getSha1Found(t *testing.T) {
 	tsclmm.On("Pull", mock.Anything, mock.Anything, mock.Anything).Return(&tsp.PullReply{
 		Torrent: loadSintel(t),
 	}, nil)
-	r, err := rm.Get([]byte("08ada5a7a6183aae1e09d831df6748d566095a10"))
+	r, err := rm.Get(context.Background(), []byte("08ada5a7a6183aae1e09d831df6748d566095a10"))
 	assert.Nil(err)
 	assertSintel(t, r)
 	tsclmm.AssertExpectations(t)
@@ -145,7 +146,7 @@ func TestResourceMap_torrentFound(t *testing.T) {
 	tsclm, _ := rm.ts.Get()
 	tsclmm := tsclm.(*TorrentStoreClientMock)
 	tsclmm.On("Touch", mock.Anything, mock.Anything, mock.Anything).Return(nil, nil)
-	r, err := rm.Get(loadSintel(t))
+	r, err := rm.Get(context.Background(), loadSintel(t))
 	assertSintel(t, r)
 	assert.Nil(err)
 	tsclmm.AssertExpectations(t)
@@ -158,7 +159,7 @@ func TestResourceMap_torrentNotFound(t *testing.T) {
 	tsclmm := tsclm.(*TorrentStoreClientMock)
 	tsclmm.On("Touch", mock.Anything, mock.Anything, mock.Anything).Return(nil, status.Error(codes.NotFound, "not found"))
 	tsclmm.On("Push", mock.Anything, mock.Anything, mock.Anything).Return(nil, nil)
-	r, err := rm.Get(loadSintel(t))
+	r, err := rm.Get(context.Background(), loadSintel(t))
 	assertSintel(t, r)
 	assert.Nil(err)
 	tsclmm.AssertExpectations(t)
@@ -173,7 +174,7 @@ func TestResourceMap_magnetFound(t *testing.T) {
 	tsclmm.On("Pull", mock.Anything, mock.Anything, mock.Anything).Return(&tsp.PullReply{
 		Torrent: loadSintel(t),
 	}, nil)
-	r, err := rm.Get([]byte(sintelMagnet))
+	r, err := rm.Get(context.Background(), []byte(sintelMagnet))
 	assertSintel(t, r)
 	assert.Nil(err)
 	tsclmm.AssertExpectations(t)
@@ -190,7 +191,7 @@ func TestResourceMap_magnetNotFound(t *testing.T) {
 	m2tclmm.On("Magnet2Torrent", mock.Anything, mock.Anything, mock.Anything).Return(&m2tp.Magnet2TorrentReply{
 		Torrent: loadSintel(t),
 	}, nil)
-	r, err := rm.Get([]byte(sintelMagnet))
+	r, err := rm.Get(context.Background(), []byte(sintelMagnet))
 	assertSintel(t, r)
 	assert.Nil(err)
 	tsclmm.AssertExpectations(t)
@@ -210,7 +211,7 @@ func TestResourceMap_magnetTimeout(t *testing.T) {
 	}, nil)
 	m2tclmm.sleep = 5 * time.Millisecond
 	rm.magnetTimeout = 1 * time.Millisecond
-	r, err := rm.Get([]byte(sintelMagnet))
+	r, err := rm.Get(context.Background(), []byte(sintelMagnet))
 	assert.Nil(r)
 	assert.NotNil(err)
 	assert.ErrorContains(err, "magnet timeout")

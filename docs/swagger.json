@@ -343,6 +343,15 @@
                 }
             }
         },
+        "services.ExportKindType": {
+            "type": "string",
+            "enum": [
+                "subtitles"
+            ],
+            "x-enum-varnames": [
+                "ExportKindTypeSubtitles"
+            ]
+        },
         "services.ExportMeta": {
             "type": "object",
             "properties": {
@@ -356,6 +365,17 @@
                     "type": "boolean"
                 }
             }
+        },
+        "services.ExportPreloadType": {
+            "type": "string",
+            "enum": [
+                "auto",
+                "none"
+            ],
+            "x-enum-varnames": [
+                "ExportPreloadTypeAuto",
+                "ExportPreloadTypeNone"
+            ]
         },
         "services.ExportResponse": {
             "type": "object",
@@ -392,7 +412,7 @@
                     "type": "string"
                 },
                 "preload": {
-                    "type": "string"
+                    "$ref": "#/definitions/services.ExportPreloadType"
                 },
                 "sources": {
                     "type": "array",
@@ -404,7 +424,7 @@
                     "type": "string"
                 },
                 "tag": {
-                    "type": "string"
+                    "$ref": "#/definitions/services.ExportTagName"
                 },
                 "tracks": {
                     "type": "array",
@@ -414,11 +434,24 @@
                 }
             }
         },
+        "services.ExportTagName": {
+            "type": "string",
+            "enum": [
+                "video",
+                "audio",
+                "img"
+            ],
+            "x-enum-varnames": [
+                "ExportTagNameVideo",
+                "ExportTagNameAudio",
+                "ExportTagNameImage"
+            ]
+        },
         "services.ExportTrack": {
             "type": "object",
             "properties": {
                 "kind": {
-                    "type": "string"
+                    "$ref": "#/definitions/services.ExportKindType"
                 },
                 "label": {
                     "type": "string"
@@ -441,7 +474,7 @@
                     "type": "string"
                 },
                 "media_format": {
-                    "type": "string"
+                    "$ref": "#/definitions/services.MediaFormat"
                 },
                 "mime_type": {
                     "type": "string"
@@ -456,7 +489,7 @@
                     "type": "integer"
                 },
                 "type": {
-                    "type": "string"
+                    "$ref": "#/definitions/services.ListType"
                 }
             }
         },
@@ -479,7 +512,7 @@
                     "type": "integer"
                 },
                 "media_format": {
-                    "type": "string"
+                    "$ref": "#/definitions/services.MediaFormat"
                 },
                 "mime_type": {
                     "type": "string"
@@ -494,9 +527,37 @@
                     "type": "integer"
                 },
                 "type": {
-                    "type": "string"
+                    "$ref": "#/definitions/services.ListType"
                 }
             }
+        },
+        "services.ListType": {
+            "type": "string",
+            "enum": [
+                "file",
+                "directory"
+            ],
+            "x-enum-varnames": [
+                "ListTypeFile",
+                "ListTypeDirectory"
+            ]
+        },
+        "services.MediaFormat": {
+            "type": "string",
+            "enum": [
+                "audio",
+                "video",
+                "image",
+                "subtitle",
+                "unknown"
+            ],
+            "x-enum-varnames": [
+                "Audio",
+                "Video",
+                "Image",
+                "Subtitle",
+                "Unknown"
+            ]
         },
         "services.ResourceResponse": {
             "type": "object",

@@ -1,39 +1,15 @@
 package services
 
 import (
+	"context"
 	"crypto/sha1"
 	"fmt"
+	"github.com/dgrijalva/jwt-go"
 	"net/url"
 	"strings"
 
 	"github.com/urfave/cli"
 )
-
-const (
-	usePieceCache                 = "use-piece-cache"
-	useTranscodeCache             = "use-transcode-cache"
-	useTranscodeMultibitrateCache = "use-transcode-multibitrate-cache"
-)
-
-func RegisterUrlBuilderFlags(f []cli.Flag) []cli.Flag {
-	return append(f,
-		cli.BoolFlag{
-			Name:   usePieceCache,
-			Usage:  "use piece cache",
-			EnvVar: "USE_PIECE_CACHE",
-		},
-		cli.BoolFlag{
-			Name:   useTranscodeCache,
-			Usage:  "use transcode cache",
-			EnvVar: "USE_TRANSCODE_CACHE",
-		},
-		cli.BoolFlag{
-			Name:   useTranscodeMultibitrateCache,
-			Usage:  "use transcode multibitrate cache",
-			EnvVar: "USE_TRANSCODE_MULTIBITRATE_CACHE",
-		},
-	)
-}
 
 type MyURL struct {
 	url.URL
@@ -44,94 +20,85 @@ type MyURL struct {
 
 func (s *MyURL) BuildExportMeta() *ExportMeta {
 	return &ExportMeta{
-		Cache:        s.cached,
-		Transcode:    s.transcode,
-		Multibitrate: s.multibitrate,
+		Cache:     s.cached,
+		Transcode: s.transcode,
 	}
 }
 
 type URLBuilder struct {
-	cpm                           *CompletedPiecesMap
-	tdm                           *TranscodeDoneMap
-	sd                            *Subdomains
-	domain                        string
-	ssl                           bool
-	usePieceCache                 bool
-	useTranscodeCache             bool
-	useTranscodeMultibitrateCache bool
+	sd        *Subdomains
+	cm        *CacheMap
+	domain    string
+	ssl       bool
+	apiSecret string
+	apiKey    string
 }
 
-func NewURLBuilder(c *cli.Context, cpm *CompletedPiecesMap, tdm *TranscodeDoneMap, sd *Subdomains) *URLBuilder {
+func NewURLBuilder(c *cli.Context, sd *Subdomains, cm *CacheMap) *URLBuilder {
 	return &URLBuilder{
-		cpm:                           cpm,
-		tdm:                           tdm,
-		sd:                            sd,
-		domain:                        c.String(exportDomainFlag),
-		ssl:                           c.BoolT(exportSSLFlag),
-		usePieceCache:                 c.Bool(usePieceCache),
-		useTranscodeCache:             c.Bool(useTranscodeCache),
-		useTranscodeMultibitrateCache: c.Bool(useTranscodeMultibitrateCache),
+		sd:        sd,
+		cm:        cm,
+		domain:    c.String(exportDomainFlag),
+		ssl:       c.BoolT(exportSSLFlag),
+		apiKey:    c.String(exportApiKeyFlag),
+		apiSecret: c.String(exportApiSecretFlag),
 	}
 }
 
-func (s *URLBuilder) Build(r *Resource, i *ListItem, g ParamGetter, et ExportType) (*MyURL, error) {
+func (s *URLBuilder) Build(ctx context.Context, r *Resource, i *ListItem, g ParamGetter, et ExportType) (*MyURL, error) {
 	bubc := BaseURLBuilder{
-		cpm:                           s.cpm,
-		sd:                            s.sd,
-		r:                             r,
-		i:                             i,
-		g:                             g,
-		domain:                        s.domain,
-		ssl:                           s.ssl,
-		usePieceCache:                 s.usePieceCache,
-		useTranscodeCache:             s.useTranscodeCache,
-		useTranscodeMultibitrateCache: s.useTranscodeMultibitrateCache,
+		sd:        s.sd,
+		cm:        s.cm,
+		r:         r,
+		i:         i,
+		g:         g,
+		domain:    s.domain,
+		ssl:       s.ssl,
+		apiKey:    s.apiKey,
+		apiSecret: s.apiSecret,
 	}
 	switch et {
 	case ExportTypeDownload:
 		dub := &DownloadURLBuilder{
 			BaseURLBuilder: bubc,
 		}
-		return dub.Build()
+		return dub.Build(ctx)
 	case ExportTypeStream:
 		sub := &StreamURLBuilder{
-			tdm:            s.tdm,
 			BaseURLBuilder: bubc,
 		}
-		return sub.Build()
+		return sub.Build(ctx)
 	case ExportTypeTorrentStat:
 		sub := &TorrentStatURLBuilder{
 			BaseURLBuilder: bubc,
 		}
-		return sub.Build()
+		return sub.Build(ctx)
 	case ExportTypeSubtitles:
 		sub := &SubtitlesURLBuilder{
 			BaseURLBuilder: bubc,
 		}
-		return sub.Build()
+		return sub.Build(ctx)
 	case ExportTypeMediaProbe:
 		sub := &MediaProbeURLBuilder{
 			StreamURLBuilder: StreamURLBuilder{
-				tdm:            s.tdm,
 				BaseURLBuilder: bubc,
 			},
 		}
-		return sub.Build()
+		return sub.Build(ctx)
 	}
 	return nil, nil
 }
 
 type BaseURLBuilder struct {
-	cpm                           *CompletedPiecesMap
-	sd                            *Subdomains
-	r                             *Resource
-	i                             *ListItem
-	g                             ParamGetter
-	domain                        string
-	ssl                           bool
-	usePieceCache                 bool
-	useTranscodeCache             bool
-	useTranscodeMultibitrateCache bool
+	sd        *Subdomains
+	cm        *CacheMap
+	r         *Resource
+	i         *ListItem
+	g         ParamGetter
+	domain    string
+	ssl       bool
+	apiSecret string
+	apiKey    string
 }
 
 type DownloadURLBuilder struct {
@@ -139,7 +106,6 @@ type DownloadURLBuilder struct {
 }
 
 type StreamURLBuilder struct {
-	tdm *TranscodeDoneMap
 	BaseURLBuilder
 }
 
@@ -158,51 +124,41 @@ type MediaProbeURLBuilder struct {
 type ServiceType string
 
 const (
-	ServiceTypeArchive                    ServiceType = "arch"
-	ServiceTypeDownloadProgress           ServiceType = "dp"
-	ServiceTypeTorrentCache               ServiceType = "tc"
-	ServiceTypeMultibitrateTranscodeCache ServiceType = "mtrc"
-	ServiceTypeTranscodeCache             ServiceType = "trc"
-	ServiceTypeTranscode                  ServiceType = "hls"
-	ServiceTypeVOD                        ServiceType = "vod"
-	ServiceTypeSRT2VTT                    ServiceType = "vtt"
-	ServiceTypeVideoInfo                  ServiceType = "vi"
+	ServiceTypeArchive   ServiceType = "arch"
+	ServiceTypeTranscode ServiceType = "hls"
+	ServiceTypeVOD       ServiceType = "vod"
+	ServiceTypeSRT2VTT   ServiceType = "vtt"
+	ServiceTypeVideoInfo ServiceType = "vi"
 )
 
 const ServiceSeparator = "~"
 
-func (s *BaseURLBuilder) BuildBaseURL(i *MyURL) (u *MyURL, err error) {
+func (s *BaseURLBuilder) BuildBaseURL(ctx context.Context, i *MyURL) (u *MyURL, err error) {
 	u = i
 	if len(s.r.Files) > 1 {
 		u.Path = "/" + s.r.ID + "/" + strings.TrimRight(s.r.Name+s.i.PathStr, "/")
 	} else {
 		u.Path = "/" + s.r.ID + "/" + strings.Trim(s.i.PathStr, "/")
 	}
-	cached := false
-	if s.usePieceCache {
-		pieces, err := s.cpm.Get(s.r.ID)
-		if err != nil {
-			return nil, err
-		}
-
-		if len(pieces) > 0 {
-			for _, f := range s.r.Files {
-				if pathBeginsWith(f.Path, s.i.Path) && pieces.HasAny(f.Pieces) {
-					cached = true
-					break
-				}
-			}
-		}
-	}
-	if cached {
-		u.Path += ServiceSeparator + string(ServiceTypeTorrentCache) + "/" + s.GetLastName()
-		u.cached = true
-	}
 	q := u.Query()
+	if s.g.Query("api-key") != "" {
+		q.Add("api-key", s.g.Query("api-key"))
+	} else if s.g.GetHeader("X-Api-Key") != "" {
+		q.Add("api-key", s.g.GetHeader("X-Api-Key"))
+	} else if s.apiKey != "" {
+		q.Add("api-key", s.apiKey)
+	}
 	if s.g.Query("token") != "" {
 		q.Add("token", s.g.Query("token"))
 	} else if s.g.GetHeader("X-Token") != "" {
 		q.Add("token", s.g.GetHeader("X-Token"))
+	} else if s.apiSecret != "" {
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{})
+		tokenString, err := token.SignedString([]byte(s.apiSecret))
+		if err != nil {
+			return nil, err
+		}
+		q.Add("token", tokenString)
 	}
 	if s.g.Query("user-id") != "" {
 		q.Add("user-id", s.g.Query("user-id"))
@@ -214,12 +170,12 @@ func (s *BaseURLBuilder) BuildBaseURL(i *MyURL) (u *MyURL, err error) {
 	} else if s.g.GetHeader("X-Request-Id") != "" {
 		q.Add("request-id", s.g.GetHeader("X-Request-Id"))
 	}
-	if s.g.Query("api-key") != "" {
-		q.Add("api-key", s.g.Query("api-key"))
-	} else if s.g.GetHeader("X-Api-Key") != "" {
-		q.Add("api-key", s.g.GetHeader("X-Api-Key"))
-	}
 	u.RawQuery = q.Encode()
+	cached, err := s.cm.Get(ctx, u)
+	if err != nil {
+		return nil, err
+	}
+	u.cached = cached
 	return
 }
 
@@ -236,17 +192,14 @@ func (s *BaseURLBuilder) BuildScheme(i *MyURL) (u *MyURL) {
 	return
 }
 
-func (s *BaseURLBuilder) BuildDomain(i *MyURL) (u *MyURL, err error) {
+func (s *BaseURLBuilder) BuildDomain(ctx context.Context, i *MyURL) (u *MyURL, err error) {
 	u = i
 	if s.domain == "" {
 		return u, nil
 	}
 	domain := s.domain
 	pool := "seeder"
-	if u.cached {
-		pool = "cache"
-	}
-	subs, err := s.sd.Get(s.r.ID, pool)
+	subs, err := s.sd.Get(ctx, s.r.ID, pool)
 	if err != nil {
 		return nil, err
 	}
@@ -270,18 +223,20 @@ func (s *DownloadURLBuilder) BuildDownloadURL(i *MyURL) (u *MyURL, err error) {
 		l += ".zip"
 		u.Path += ServiceSeparator + string(ServiceTypeArchive) + "/" + l
 	}
-	if s.g.Query("download-progress") == "true" {
-		u.Path += ServiceSeparator + string(ServiceTypeDownloadProgress) + "/" + l
-	}
 	q := u.Query()
 	q.Add("download", "true")
 	u.RawQuery = q.Encode()
 	return
 }
 
-func (s *DownloadURLBuilder) Build() (u *MyURL, err error) {
+func (s *DownloadURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 	u = &MyURL{}
-	u, err = s.BuildBaseURL(u)
+	u, err = s.BuildDomain(ctx, u)
+	if err != nil {
+		return
+	}
+	s.BuildScheme(u)
+	u, err = s.BuildBaseURL(ctx, u)
 	if err != nil {
 		return
 	}
@@ -289,17 +244,17 @@ func (s *DownloadURLBuilder) Build() (u *MyURL, err error) {
 	if err != nil {
 		return
 	}
-	u, err = s.BuildDomain(u)
-	if err != nil {
-		return
-	}
-	s.BuildScheme(u)
 	return
 }
 
-func (s *StreamURLBuilder) Build() (u *MyURL, err error) {
+func (s *StreamURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 	u = &MyURL{}
-	u, err = s.BuildBaseURL(u)
+	s.BuildScheme(u)
+	u, err = s.BuildDomain(ctx, u)
+	if err != nil {
+		return
+	}
+	u, err = s.BuildBaseURL(ctx, u)
 	if err != nil {
 		return
 	}
@@ -307,35 +262,7 @@ func (s *StreamURLBuilder) Build() (u *MyURL, err error) {
 	if err != nil {
 		return
 	}
-	u, err = s.BuildDomain(u)
-	if err != nil {
-		return
-	}
-	s.BuildScheme(u)
 	return
-}
-
-func (s *StreamURLBuilder) BuildTranscodeCacheURL(i *MyURL, multi bool, suffix string) (u *MyURL, ok bool, err error) {
-	u = i
-	prefix := "transcoder"
-	svc := ServiceTypeTranscodeCache
-	u.multibitrate = false
-	if multi {
-		prefix = "mb-transcoder"
-		u.multibitrate = true
-		svc = ServiceTypeMultibitrateTranscodeCache
-	}
-	c, err := s.tdm.Get(prefix, s.r.ID, "/"+s.r.Name+s.i.PathStr)
-	if err != nil {
-		return nil, false, err
-	}
-	if c {
-		u.cached = true
-		u.transcode = true
-		u.Path += ServiceSeparator + string(svc) + suffix
-		return u, true, nil
-	}
-	return u, false, nil
 }
 
 func (s *StreamURLBuilder) BuildTranscodeURL(i *MyURL, suffix string) (u *MyURL) {
@@ -353,19 +280,6 @@ func (s *StreamURLBuilder) BuildVODURL(i *MyURL, suffix string) (u *MyURL) {
 
 func (s *StreamURLBuilder) BuildVideoStreamURL(i *MyURL, suffix string) (u *MyURL, err error) {
 	u = i
-	ok := false
-	if s.useTranscodeMultibitrateCache {
-		u, ok, err = s.BuildTranscodeCacheURL(u, true, suffix)
-		if err != nil || ok {
-			return
-		}
-	}
-	if s.useTranscodeCache {
-		u, ok, err = s.BuildTranscodeCacheURL(u, false, suffix)
-		if err != nil || ok {
-			return
-		}
-	}
 	if shouldTranscode(s.i.Ext) {
 		u = s.BuildTranscodeURL(i, suffix)
 		return
@@ -377,13 +291,6 @@ func (s *StreamURLBuilder) BuildVideoStreamURL(i *MyURL, suffix string) (u *MyUR
 
 func (s *StreamURLBuilder) BuildAudioStreamURL(i *MyURL, suffix string) (u *MyURL, err error) {
 	u = i
-	ok := false
-	if s.useTranscodeCache {
-		u, ok, err = s.BuildTranscodeCacheURL(u, false, suffix)
-		if err != nil || ok {
-			return
-		}
-	}
 	if shouldTranscode(s.i.Ext) {
 		u = s.BuildTranscodeURL(i, suffix)
 		return
@@ -430,9 +337,14 @@ func (s *TorrentStatURLBuilder) BuildStatURL(i *MyURL) *MyURL {
 	return u
 }
 
-func (s *TorrentStatURLBuilder) Build() (u *MyURL, err error) {
+func (s *TorrentStatURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 	u = &MyURL{}
-	u, err = s.BuildBaseURL(u)
+	s.BuildScheme(u)
+	u, err = s.BuildDomain(ctx, u)
+	if err != nil {
+		return
+	}
+	u, err = s.BuildBaseURL(ctx, u)
 	if err != nil {
 		return
 	}
@@ -440,14 +352,6 @@ func (s *TorrentStatURLBuilder) Build() (u *MyURL, err error) {
 		return nil, nil
 	}
 	u = s.BuildStatURL(u)
-	if err != nil {
-		return
-	}
-	u, err = s.BuildDomain(u)
-	if err != nil {
-		return
-	}
-	s.BuildScheme(u)
 	return
 }
 
@@ -463,24 +367,29 @@ func (s *SubtitlesURLBuilder) BuildSubtitlesURL(i *MyURL) (u *MyURL) {
 	return u
 }
 
-func (s *SubtitlesURLBuilder) Build() (u *MyURL, err error) {
+func (s *SubtitlesURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 	u = &MyURL{}
-	u, err = s.BuildBaseURL(u)
+	s.BuildScheme(u)
+	u, err = s.BuildDomain(ctx, u)
+	if err != nil {
+		return
+	}
+	u, err = s.BuildBaseURL(ctx, u)
 	if err != nil {
 		return
 	}
 	u = s.BuildSubtitlesURL(u)
-	u, err = s.BuildDomain(u)
-	if err != nil {
-		return
-	}
-	s.BuildScheme(u)
 	return
 }
 
-func (s *MediaProbeURLBuilder) Build() (u *MyURL, err error) {
+func (s *MediaProbeURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 	u = &MyURL{}
-	u, err = s.BuildBaseURL(u)
+	s.BuildScheme(u)
+	u, err = s.BuildDomain(ctx, u)
+	if err != nil {
+		return
+	}
+	u, err = s.BuildBaseURL(ctx, u)
 	if err != nil {
 		return
 	}
@@ -491,10 +400,5 @@ func (s *MediaProbeURLBuilder) Build() (u *MyURL, err error) {
 	if !u.transcode {
 		return nil, nil
 	}
-	u, err = s.BuildDomain(u)
-	if err != nil {
-		return
-	}
-	s.BuildScheme(u)
 	return
 }

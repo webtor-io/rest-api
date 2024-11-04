@@ -1,12 +1,11 @@
 package main
 
 import (
-	"net/http"
-
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	cs "github.com/webtor-io/common-services"
 	s "github.com/webtor-io/rest-api/services"
+	"net/http"
 )
 
 func makeServeCMD() cli.Command {
@@ -22,15 +21,12 @@ func makeServeCMD() cli.Command {
 
 func configureServe(c *cli.Command) {
 	c.Flags = cs.RegisterProbeFlags(c.Flags)
-	c.Flags = s.RegisterUrlBuilderFlags((c.Flags))
 	c.Flags = s.RegisterWebFlags(c.Flags)
 	c.Flags = s.RegisterTorrentStoreFlags(c.Flags)
 	c.Flags = s.RegisterMagnet2TorrentFlags(c.Flags)
-	c.Flags = s.RegisterTorrentWebCacheFlags(c.Flags)
 	c.Flags = s.RegisterExportFlags(c.Flags)
 	c.Flags = s.RegisterNodesStatFlags(c.Flags)
 	c.Flags = s.RegisterPromClientFlags(c.Flags)
-	c.Flags = s.RegisterTranscodeWebCacheFlags(c.Flags)
 }
 
 func serve(c *cli.Context) error {
@@ -42,6 +38,12 @@ func serve(c *cli.Context) error {
 	ts := s.NewTorrentStore(c)
 	defer ts.Close()
 
+	// Setting HTTP Client
+	httpCl := http.DefaultClient
+
+	// Seeting CacheMap
+	cm := s.NewCacheMap(httpCl)
+
 	// Setting Magnet2Torrent
 	m2t := s.NewMagnet2Torrent(c)
 	defer m2t.Close()
@@ -51,12 +53,6 @@ func serve(c *cli.Context) error {
 
 	// Setting List
 	li := s.NewList()
-
-	// Setting CompletedPiecesMap
-	cpm := s.NewCompletedPiecesMap(c, &http.Client{})
-
-	// Setting TranscodeDoneMap
-	tdm := s.NewTranscodeDoneMap(c, &http.Client{})
 
 	// Setting PromClient
 	pcl := s.NewPromClient(c)
@@ -71,7 +67,7 @@ func serve(c *cli.Context) error {
 	sd := s.NewSubdomains(c, ns)
 
 	// Setting URLBuilder
-	ub := s.NewURLBuilder(c, cpm, tdm, sd)
+	ub := s.NewURLBuilder(c, sd, cm)
 
 	// Setting DownloadExporter
 	de := s.NewDownloadExporter(ub)

@@ -164,13 +164,13 @@ func (s *ResourceMap) parse(b []byte) (*Resource, error) {
 	}
 }
 
-func (s *ResourceMap) get(r *Resource, b []byte) (*Resource, error) {
+func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource, error) {
 	ts, err := s.ts.Get()
 	if err != nil {
 		return nil, err
 	}
 	found := true
-	_, err = ts.Touch(context.Background(), &tsp.TouchRequest{InfoHash: r.ID})
+	_, err = ts.Touch(ctx, &tsp.TouchRequest{InfoHash: r.ID})
 	if err != nil {
 		if st, ok := status.FromError(err); ok {
 			switch st.Code() {
@@ -189,7 +189,7 @@ func (s *ResourceMap) get(r *Resource, b []byte) (*Resource, error) {
 		if r.Type == ResourceTypeTorrent {
 			return r, nil
 		} else {
-			rep, err := ts.Pull(context.Background(), &tsp.PullRequest{InfoHash: r.ID})
+			rep, err := ts.Pull(ctx, &tsp.PullRequest{InfoHash: r.ID})
 			if err != nil {
 				return nil, err
 			}
@@ -200,7 +200,7 @@ func (s *ResourceMap) get(r *Resource, b []byte) (*Resource, error) {
 	case ResourceTypeSha1:
 		return nil, errors.Errorf("not found sha1=%v", r.ID)
 	case ResourceTypeTorrent:
-		_, err := ts.Push(context.Background(), &tsp.PushRequest{Torrent: b})
+		_, err := ts.Push(ctx, &tsp.PushRequest{Torrent: b})
 		if err != nil {
 			return nil, err
 		}
@@ -211,15 +211,15 @@ func (s *ResourceMap) get(r *Resource, b []byte) (*Resource, error) {
 		if err != nil {
 			return nil, err
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), s.magnetTimeout)
+		mctx, cancel := context.WithTimeout(ctx, s.magnetTimeout)
 		defer cancel()
-		rep, err := m2t.Magnet2Torrent(ctx, &m2tp.Magnet2TorrentRequest{Magnet: string(b)})
-		if err != nil && ctx.Err() != nil {
+		rep, err := m2t.Magnet2Torrent(mctx, &m2tp.Magnet2TorrentRequest{Magnet: string(b)})
+		if err != nil && mctx.Err() != nil {
 			return nil, errors.Wrap(err, "magnet timeout")
 		} else if err != nil {
 			return nil, err
 		}
-		_, err = ts.Push(context.Background(), &tsp.PushRequest{Torrent: rep.GetTorrent()})
+		_, err = ts.Push(ctx, &tsp.PushRequest{Torrent: rep.GetTorrent()})
 		if err != nil {
 			return nil, err
 		}
@@ -228,13 +228,13 @@ func (s *ResourceMap) get(r *Resource, b []byte) (*Resource, error) {
 	return nil, nil
 }
 
-func (s *ResourceMap) Get(b []byte) (*Resource, error) {
+func (s *ResourceMap) Get(ctx context.Context, b []byte) (*Resource, error) {
 	r, err := s.parse(b)
 	if err != nil {
 		return nil, err
 	}
 	res, err := s.LazyMap.Get(r.ID, func() (interface{}, error) {
-		return s.get(r, b)
+		return s.get(ctx, r, b)
 	})
 	if err != nil {
 		return nil, err

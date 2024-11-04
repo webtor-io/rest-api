@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"math"
 	"sort"
 	"strconv"
@@ -31,7 +32,7 @@ type NodeStatWithScore struct {
 }
 
 func (s *Subdomains) filterByPool(stats []NodeStatWithScore, pool string) []NodeStatWithScore {
-	res := []NodeStatWithScore{}
+	var res []NodeStatWithScore
 	for _, st := range stats {
 		for _, p := range st.Pools {
 			if pool == p {
@@ -43,7 +44,7 @@ func (s *Subdomains) filterByPool(stats []NodeStatWithScore, pool string) []Node
 }
 
 func (s *Subdomains) filterWithZeroScore(stats []NodeStatWithScore) []NodeStatWithScore {
-	res := []NodeStatWithScore{}
+	var res []NodeStatWithScore
 	for _, st := range stats {
 		if st.Score != 0 {
 			res = append(res, st)
@@ -118,8 +119,8 @@ func (s *Subdomains) updateScoreByBandwidth(stats []NodeStatWithScore) []NodeSta
 	return stats
 }
 
-func (s *Subdomains) getScoredStats(infohash string, pool string) ([]NodeStatWithScore, error) {
-	stats, err := s.nsp.Get()
+func (s *Subdomains) getScoredStats(ctx context.Context, infohash string, pool string) ([]NodeStatWithScore, error) {
+	stats, err := s.nsp.Get(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get nodes stat")
 	}
@@ -167,12 +168,12 @@ func (s *Subdomains) getScoredStatsByPool(sc []NodeStatWithScore, infohash strin
 	return sc, nil
 }
 
-func (s *Subdomains) Get(infohash string, pool string) ([]string, error) {
-	stats, err := s.getScoredStats(infohash, pool)
+func (s *Subdomains) Get(ctx context.Context, infohash string, pool string) ([]string, error) {
+	stats, err := s.getScoredStats(ctx, infohash, pool)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get sorted nodes stat")
 	}
-	res := []string{}
+	var res []string
 	for _, st := range stats {
 		res = append(res, st.Subdomain)
 	}

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -8,8 +9,10 @@ import (
 )
 
 const (
-	exportDomainFlag = "export-domain"
-	exportSSLFlag    = "export-ssl"
+	exportDomainFlag    = "export-domain"
+	exportSSLFlag       = "export-ssl"
+	exportApiKeyFlag    = "export-api-key"
+	exportApiSecretFlag = "export-api-secret"
 )
 
 func RegisterExportFlags(f []cli.Flag) []cli.Flag {
@@ -24,6 +27,18 @@ func RegisterExportFlags(f []cli.Flag) []cli.Flag {
 			Name:   exportSSLFlag,
 			Usage:  "export ssl",
 			EnvVar: "EXPORT_SSL",
+		},
+		cli.StringFlag{
+			Name:   exportApiKeyFlag,
+			Usage:  "export api key",
+			Value:  "",
+			EnvVar: "EXPORT_API_KEY",
+		},
+		cli.StringFlag{
+			Name:   exportApiSecretFlag,
+			Usage:  "export api token",
+			Value:  "",
+			EnvVar: "EXPORT_API_SECRET",
 		},
 	)
 }
@@ -81,7 +96,7 @@ func ExportGetArgsFromParams(g ParamGetter) (*ExportGetArgs, error) {
 
 type Exporter interface {
 	Type() ExportType
-	Export(r *Resource, i *ListItem, g ParamGetter) (*ExportItem, error)
+	Export(ctx context.Context, r *Resource, i *ListItem, g ParamGetter) (*ExportItem, error)
 }
 
 func NewExport(e ...Exporter) *Export {
@@ -90,12 +105,12 @@ func NewExport(e ...Exporter) *Export {
 	}
 }
 
-func (s *Export) Get(r *Resource, i *ListItem, args *ExportGetArgs, g ParamGetter) (*ExportResponse, error) {
+func (s *Export) Get(ctx context.Context, r *Resource, i *ListItem, args *ExportGetArgs, g ParamGetter) (*ExportResponse, error) {
 	items := map[string]ExportItem{}
 	for _, t := range args.Types {
 		for _, e := range s.exporters {
 			if e.Type() == t {
-				ex, err := e.Export(r, i, g)
+				ex, err := e.Export(ctx, r, i, g)
 				if err != nil {
 					return nil, err
 				}
@@ -120,8 +135,8 @@ func (s *BaseExporter) Type() ExportType {
 	return s.exportType
 }
 
-func (s *BaseExporter) BuildURL(r *Resource, i *ListItem, g ParamGetter) (*MyURL, error) {
-	return s.ub.Build(r, i, g, s.Type())
+func (s *BaseExporter) BuildURL(ctx context.Context, r *Resource, i *ListItem, g ParamGetter) (*MyURL, error) {
+	return s.ub.Build(ctx, r, i, g, s.Type())
 }
 
 type DownloadExporter struct {
@@ -154,8 +169,8 @@ func NewDownloadExporter(ub *URLBuilder) *DownloadExporter {
 	}
 }
 
-func (s *DownloadExporter) Export(r *Resource, i *ListItem, g ParamGetter) (*ExportItem, error) {
-	url, err := s.BuildURL(r, i, g)
+func (s *DownloadExporter) Export(ctx context.Context, r *Resource, i *ListItem, g ParamGetter) (*ExportItem, error) {
+	url, err := s.BuildURL(ctx, r, i, g)
 	if err != nil {
 		return nil, err
 	}
@@ -186,9 +201,9 @@ func (s *StreamExporter) Type() ExportType {
 	return ExportTypeStream
 }
 
-func (s *StreamExporter) MakeExportStreamItem(r *Resource, i *ListItem, g ParamGetter) (*ExportStreamItem, error) {
+func (s *StreamExporter) MakeExportStreamItem(ctx context.Context, r *Resource, i *ListItem, g ParamGetter) (*ExportStreamItem, error) {
 	ei := &ExportStreamItem{}
-	t, err := s.tb.Build(r, i, g)
+	t, err := s.tb.Build(ctx, r, i, g)
 	if err != nil {
 		return nil, err
 	}
@@ -198,16 +213,16 @@ func (s *StreamExporter) MakeExportStreamItem(r *Resource, i *ListItem, g ParamG
 	return ei, nil
 }
 
-func (s *StreamExporter) Export(r *Resource, i *ListItem, g ParamGetter) (*ExportItem, error) {
+func (s *StreamExporter) Export(ctx context.Context, r *Resource, i *ListItem, g ParamGetter) (*ExportItem, error) {
 	if i.MediaFormat == "" {
 		return nil, nil
 	}
-	url, err := s.BuildURL(r, i, g)
+	url, err := s.BuildURL(ctx, r, i, g)
 	if err != nil {
 		return nil, err
 	}
 
-	ei, err := s.MakeExportStreamItem(r, i, g)
+	ei, err := s.MakeExportStreamItem(ctx, r, i, g)
 	if err != nil {
 		return nil, err
 	}
@@ -231,8 +246,8 @@ func NewTorrentStatExporter(ub *URLBuilder) *TorrentStatExporter {
 	}
 }
 
-func (s *TorrentStatExporter) Export(r *Resource, i *ListItem, g ParamGetter) (*ExportItem, error) {
-	url, err := s.BuildURL(r, i, g)
+func (s *TorrentStatExporter) Export(ctx context.Context, r *Resource, i *ListItem, g ParamGetter) (*ExportItem, error) {
+	url, err := s.BuildURL(ctx, r, i, g)
 	if err != nil {
 		return nil, err
 	}
@@ -255,11 +270,11 @@ func NewSubtitlesExporter(ub *URLBuilder) *SubtitlesExporter {
 	}
 }
 
-func (s *SubtitlesExporter) Export(r *Resource, i *ListItem, g ParamGetter) (*ExportItem, error) {
+func (s *SubtitlesExporter) Export(ctx context.Context, r *Resource, i *ListItem, g ParamGetter) (*ExportItem, error) {
 	if i.MediaFormat != Video {
 		return nil, nil
 	}
-	url, err := s.BuildURL(r, i, g)
+	url, err := s.BuildURL(ctx, r, i, g)
 	if err != nil {
 		return nil, err
 	}
@@ -281,8 +296,8 @@ func NewMediaProbeExporter(ub *URLBuilder) *MediaProbeExporter {
 	}
 }
 
-func (s *MediaProbeExporter) Export(r *Resource, i *ListItem, g ParamGetter) (*ExportItem, error) {
-	url, err := s.BuildURL(r, i, g)
+func (s *MediaProbeExporter) Export(ctx context.Context, r *Resource, i *ListItem, g ParamGetter) (*ExportItem, error) {
+	url, err := s.BuildURL(ctx, r, i, g)
 	if err != nil {
 		return nil, err
 	}

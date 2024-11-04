@@ -13,6 +13,12 @@ definitions:
       url:
         type: string
     type: object
+  services.ExportKindType:
+    enum:
+    - subtitles
+    type: string
+    x-enum-varnames:
+    - ExportKindTypeSubtitles
   services.ExportMeta:
     properties:
       cache:
@@ -22,6 +28,14 @@ definitions:
       transcode:
         type: boolean
     type: object
+  services.ExportPreloadType:
+    enum:
+    - auto
+    - none
+    type: string
+    x-enum-varnames:
+    - ExportPreloadTypeAuto
+    - ExportPreloadTypeNone
   services.ExportResponse:
     properties:
       exports:
@@ -45,7 +59,7 @@ definitions:
       poster:
         type: string
       preload:
-        type: string
+        $ref: '#/definitions/services.ExportPreloadType'
       sources:
         items:
           $ref: '#/definitions/services.ExportSource'
@@ -53,16 +67,26 @@ definitions:
       src:
         type: string
       tag:
-        type: string
+        $ref: '#/definitions/services.ExportTagName'
       tracks:
         items:
           $ref: '#/definitions/services.ExportTrack'
         type: array
     type: object
+  services.ExportTagName:
+    enum:
+    - video
+    - audio
+    - img
+    type: string
+    x-enum-varnames:
+    - ExportTagNameVideo
+    - ExportTagNameAudio
+    - ExportTagNameImage
   services.ExportTrack:
     properties:
       kind:
-        type: string
+        $ref: '#/definitions/services.ExportKindType'
       label:
         type: string
       src:
@@ -77,7 +101,7 @@ definitions:
       id:
         type: string
       media_format:
-        type: string
+        $ref: '#/definitions/services.MediaFormat'
       mime_type:
         type: string
       name:
@@ -87,7 +111,7 @@ definitions:
       size:
         type: integer
       type:
-        type: string
+        $ref: '#/definitions/services.ListType'
     type: object
   services.ListResponse:
     properties:
@@ -102,7 +126,7 @@ definitions:
       items_count:
         type: integer
       media_format:
-        type: string
+        $ref: '#/definitions/services.MediaFormat'
       mime_type:
         type: string
       name:
@@ -112,8 +136,30 @@ definitions:
       size:
         type: integer
       type:
-        type: string
+        $ref: '#/definitions/services.ListType'
     type: object
+  services.ListType:
+    enum:
+    - file
+    - directory
+    type: string
+    x-enum-varnames:
+    - ListTypeFile
+    - ListTypeDirectory
+  services.MediaFormat:
+    enum:
+    - audio
+    - video
+    - image
+    - subtitle
+    - unknown
+    type: string
+    x-enum-varnames:
+    - Audio
+    - Video
+    - Image
+    - Subtitle
+    - Unknown
   services.ResourceResponse:
     properties:
       id:

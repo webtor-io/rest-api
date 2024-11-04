@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"mime"
 	"path/filepath"
 	"strings"
@@ -21,7 +22,7 @@ func NewTagBuilder(ub *URLBuilder, l *List) *TagBuilder {
 	}
 }
 
-type BaseTagBulder struct {
+type BaseTagBuilder struct {
 	ub *URLBuilder
 	r  *Resource
 	i  *ListItem
@@ -30,19 +31,19 @@ type BaseTagBulder struct {
 
 type VideoTagBuider struct {
 	l *List
-	BaseTagBulder
+	BaseTagBuilder
 }
 
 type AudioTagBuider struct {
-	BaseTagBulder
+	BaseTagBuilder
 }
 
 type ImageTagBuider struct {
-	BaseTagBulder
+	BaseTagBuilder
 }
 
-func (s *TagBuilder) Build(r *Resource, i *ListItem, g ParamGetter) (*ExportTag, error) {
-	btb := BaseTagBulder{
+func (s *TagBuilder) Build(ctx context.Context, r *Resource, i *ListItem, g ParamGetter) (*ExportTag, error) {
+	btb := BaseTagBuilder{
 		ub: s.ub,
 		r:  r,
 		i:  i,
@@ -51,29 +52,29 @@ func (s *TagBuilder) Build(r *Resource, i *ListItem, g ParamGetter) (*ExportTag,
 	switch i.MediaFormat {
 	case Video:
 		vtb := VideoTagBuider{
-			l:             s.l,
-			BaseTagBulder: btb,
+			l:              s.l,
+			BaseTagBuilder: btb,
 		}
-		return vtb.Build()
+		return vtb.Build(ctx)
 	case Audio:
 		atb := AudioTagBuider{
-			BaseTagBulder: btb,
+			BaseTagBuilder: btb,
 		}
-		return atb.Build()
+		return atb.Build(ctx)
 	case Image:
 		itb := ImageTagBuider{
-			BaseTagBulder: btb,
+			BaseTagBuilder: btb,
 		}
-		return itb.Build()
+		return itb.Build(ctx)
 	}
 	return nil, nil
 }
 
-func (s *BaseTagBulder) BuildURL(i *ListItem) (*MyURL, error) {
-	return s.ub.Build(s.r, i, s.g, ExportTypeStream)
+func (s *BaseTagBuilder) BuildURL(ctx context.Context, i *ListItem) (*MyURL, error) {
+	return s.ub.Build(ctx, s.r, i, s.g, ExportTypeStream)
 }
 
-func (s *BaseTagBulder) BuildSource(u *MyURL) *ExportSource {
+func (s *BaseTagBuilder) BuildSource(u *MyURL) *ExportSource {
 	ext := filepath.Ext(u.Path)
 	t := ""
 	if strings.HasSuffix(u.Path, "index.m3u8") {
@@ -86,8 +87,8 @@ func (s *BaseTagBulder) BuildSource(u *MyURL) *ExportSource {
 		Type: t,
 	}
 }
-func (s *BaseTagBulder) BuildAVTag(n ExportTagName) (*ExportTag, error) {
-	url, err := s.BuildURL(s.i)
+func (s *BaseTagBuilder) BuildAVTag(ctx context.Context, n ExportTagName) (*ExportTag, error) {
+	url, err := s.BuildURL(ctx, s.i)
 	if err != nil {
 		return nil, err
 	}
@@ -119,8 +120,8 @@ func (s *ListItem) SameDirectory(li *ListItem) bool {
 	return true
 }
 
-func (s *VideoTagBuider) BuildTrack(i *ListItem) (*ExportTrack, error) {
-	u, err := s.BuildURL(i)
+func (s *VideoTagBuider) BuildTrack(ctx context.Context, i *ListItem) (*ExportTrack, error) {
+	u, err := s.BuildURL(ctx, i)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +144,7 @@ func (s *VideoTagBuider) BuildTrack(i *ListItem) (*ExportTrack, error) {
 	}, nil
 }
 
-func (s *VideoTagBuider) BuildAttachedResources(et *ExportTag) (*ExportTag, error) {
+func (s *VideoTagBuider) BuildAttachedResources(ctx context.Context, et *ExportTag) (*ExportTag, error) {
 	r, err := s.l.Get(s.r, &ListGetArgs{})
 	if err != nil {
 		return nil, err
@@ -151,7 +152,7 @@ func (s *VideoTagBuider) BuildAttachedResources(et *ExportTag) (*ExportTag, erro
 	tt := []ExportTrack{}
 	for _, v := range r.Items {
 		if v.SameDirectory(s.i) && v.MediaFormat == Subtitle && strings.HasPrefix(v.Name, strings.TrimSuffix(s.i.Name, "."+s.i.Ext)) {
-			t, err := s.BuildTrack(&v)
+			t, err := s.BuildTrack(ctx, &v)
 			if err != nil {
 				return nil, err
 			}
@@ -160,7 +161,7 @@ func (s *VideoTagBuider) BuildAttachedResources(et *ExportTag) (*ExportTag, erro
 			}
 		}
 		if v.SameDirectory(s.i) && v.MediaFormat == Image && et.Poster == "" {
-			u, err := s.BuildURL(&v)
+			u, err := s.BuildURL(ctx, &v)
 			if err != nil {
 				return nil, err
 			}
@@ -171,20 +172,20 @@ func (s *VideoTagBuider) BuildAttachedResources(et *ExportTag) (*ExportTag, erro
 	return et, nil
 }
 
-func (s *VideoTagBuider) Build() (*ExportTag, error) {
-	et, err := s.BuildAVTag(ExportTagNameVideo)
+func (s *VideoTagBuider) Build(ctx context.Context) (*ExportTag, error) {
+	et, err := s.BuildAVTag(ctx, ExportTagNameVideo)
 	if err != nil {
 		return nil, err
 	}
-	return s.BuildAttachedResources(et)
+	return s.BuildAttachedResources(ctx, et)
 }
 
-func (s *AudioTagBuider) Build() (*ExportTag, error) {
-	return s.BuildAVTag(ExportTagNameAudio)
+func (s *AudioTagBuider) Build(ctx context.Context) (*ExportTag, error) {
+	return s.BuildAVTag(ctx, ExportTagNameAudio)
 }
 
-func (s *ImageTagBuider) Build() (et *ExportTag, err error) {
-	src, err := s.BuildURL(s.i)
+func (s *ImageTagBuider) Build(ctx context.Context) (et *ExportTag, err error) {
+	src, err := s.BuildURL(ctx, s.i)
 	if err != nil {
 		return nil, err
 	}

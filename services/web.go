@@ -90,7 +90,7 @@ func (s *Web) postResource(g *gin.Context) {
 		g.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
-	r, err := s.rm.Get(bb)
+	r, err := s.rm.Get(g.Request.Context(), bb)
 	if err != nil {
 		g.Error(err)
 		return
@@ -120,7 +120,7 @@ func (s *Web) getResource(g *gin.Context) {
 		s.getTorrent(g)
 		return
 	}
-	r, err := s.rm.Get([]byte(id))
+	r, err := s.rm.Get(g.Request.Context(), []byte(id))
 	if err != nil {
 		g.Error(err)
 		return
@@ -147,7 +147,7 @@ func (s *Web) getResource(g *gin.Context) {
 func (s *Web) getTorrent(g *gin.Context) {
 	id := g.Param("resource_id")
 	id = strings.TrimSuffix(id, ".torrent")
-	r, err := s.rm.Get([]byte(id))
+	r, err := s.rm.Get(g.Request.Context(), []byte(id))
 	if err != nil {
 		g.Error(err)
 		return
@@ -180,7 +180,7 @@ func (s *Web) getList(g *gin.Context) {
 		return
 	}
 	id := g.Param("resource_id")
-	r, err := s.rm.Get([]byte(id))
+	r, err := s.rm.Get(g.Request.Context(), []byte(id))
 	if err != nil {
 		g.Error(err)
 		return
@@ -219,7 +219,7 @@ func (s *Web) getExport(g *gin.Context) {
 		return
 	}
 	resourceID := g.Param("resource_id")
-	r, err := s.rm.Get([]byte(resourceID))
+	r, err := s.rm.Get(g.Request.Context(), []byte(resourceID))
 	if err != nil {
 		g.Error(err)
 		return
@@ -243,7 +243,7 @@ func (s *Web) getExport(g *gin.Context) {
 		g.Error(errors.Errorf("content with id %v not found", contentID))
 		return
 	}
-	res, err := s.e.Get(r, item, args, g)
+	res, err := s.e.Get(g.Request.Context(), r, item, args, g)
 	if err != nil {
 		g.Error(err)
 		return
