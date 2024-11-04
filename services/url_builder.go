@@ -235,11 +235,11 @@ func (s *DownloadURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 	if err != nil {
 		return
 	}
-	s.BuildScheme(u)
 	u, err = s.BuildBaseURL(ctx, u)
 	if err != nil {
 		return
 	}
+	u = s.BuildScheme(u)
 	u, err = s.BuildDownloadURL(u)
 	if err != nil {
 		return
@@ -249,11 +249,11 @@ func (s *DownloadURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 
 func (s *StreamURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 	u = &MyURL{}
-	s.BuildScheme(u)
 	u, err = s.BuildDomain(ctx, u)
 	if err != nil {
 		return
 	}
+	u = s.BuildScheme(u)
 	u, err = s.BuildBaseURL(ctx, u)
 	if err != nil {
 		return
@@ -339,11 +339,11 @@ func (s *TorrentStatURLBuilder) BuildStatURL(i *MyURL) *MyURL {
 
 func (s *TorrentStatURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 	u = &MyURL{}
-	s.BuildScheme(u)
 	u, err = s.BuildDomain(ctx, u)
 	if err != nil {
 		return
 	}
+	u = s.BuildScheme(u)
 	u, err = s.BuildBaseURL(ctx, u)
 	if err != nil {
 		return
@@ -369,11 +369,11 @@ func (s *SubtitlesURLBuilder) BuildSubtitlesURL(i *MyURL) (u *MyURL) {
 
 func (s *SubtitlesURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 	u = &MyURL{}
-	s.BuildScheme(u)
 	u, err = s.BuildDomain(ctx, u)
 	if err != nil {
 		return
 	}
+	u = s.BuildScheme(u)
 	u, err = s.BuildBaseURL(ctx, u)
 	if err != nil {
 		return
@@ -384,11 +384,11 @@ func (s *SubtitlesURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 
 func (s *MediaProbeURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 	u = &MyURL{}
-	s.BuildScheme(u)
 	u, err = s.BuildDomain(ctx, u)
 	if err != nil {
 		return
 	}
+	u = s.BuildScheme(u)
 	u, err = s.BuildBaseURL(ctx, u)
 	if err != nil {
 		return
