@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 type CacheMap struct {
@@ -15,13 +16,16 @@ type CacheMap struct {
 
 func NewCacheMap(cl *http.Client) *CacheMap {
 	return &CacheMap{
-		LazyMap: lazymap.New(&lazymap.Config{}),
-		cl:      cl,
+		LazyMap: lazymap.New(&lazymap.Config{
+			Expire:      30 * time.Second,
+			ErrorExpire: 5 * time.Second,
+		}),
+		cl: cl,
 	}
 }
 
 func (s *CacheMap) Get(ctx context.Context, url *MyURL) (bool, error) {
-	res, err := s.LazyMap.Get("", func() (interface{}, error) {
+	res, err := s.LazyMap.Get(url.String(), func() (interface{}, error) {
 		return s.get(ctx, url)
 	})
 	if err != nil {
