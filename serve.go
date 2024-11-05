@@ -21,6 +21,7 @@ func makeServeCMD() cli.Command {
 
 func configureServe(c *cli.Command) {
 	c.Flags = cs.RegisterProbeFlags(c.Flags)
+	c.Flags = cs.RegisterPprofFlags(c.Flags)
 	c.Flags = s.RegisterWebFlags(c.Flags)
 	c.Flags = s.RegisterTorrentStoreFlags(c.Flags)
 	c.Flags = s.RegisterMagnet2TorrentFlags(c.Flags)
@@ -30,9 +31,22 @@ func configureServe(c *cli.Command) {
 }
 
 func serve(c *cli.Context) error {
+
+	services := []cs.Servable{}
+
 	// Setting Probe
 	probe := cs.NewProbe(c)
-	defer probe.Close()
+	if probe != nil {
+		services = append(services, probe)
+		defer probe.Close()
+	}
+
+	// Setting PPROF
+	pprof := cs.NewPprof(c)
+	if pprof != nil {
+		services = append(services, pprof)
+		defer pprof.Close()
+	}
 
 	// Setting TorrentStore
 	ts := s.NewTorrentStore(c)
@@ -91,10 +105,13 @@ func serve(c *cli.Context) error {
 
 	// Setting Web
 	web := s.NewWeb(c, rm, li, ex)
-	defer web.Close()
+	if web != nil {
+		services = append(services, web)
+		defer web.Close()
+	}
 
 	// Setting Serve
-	serve := cs.NewServe(probe, web)
+	serve := cs.NewServe(services...)
 
 	// And SERVE!
 	err := serve.Serve()

@@ -15,7 +15,7 @@ require (
 	github.com/swaggo/gin-swagger v1.6.0
 	github.com/swaggo/swag v1.16.4
 	github.com/urfave/cli v1.22.16
-	github.com/webtor-io/common-services v0.0.0-20241022160325-d391acd827ab
+	github.com/webtor-io/common-services v0.0.0-20241105172818-f7eb346e94e6
 	github.com/webtor-io/lazymap v0.0.0-20221030185154-1799721becef
 	github.com/webtor-io/magnet2torrent v0.0.0-20220312143110-bc1a7e4bcbba
 	github.com/webtor-io/torrent-store v0.0.0-20241022205639-508b284b979d

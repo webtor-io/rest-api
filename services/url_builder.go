@@ -181,9 +181,6 @@ func (s *BaseURLBuilder) BuildBaseURL(ctx context.Context, i *MyURL) (u *MyURL, 
 
 func (s *BaseURLBuilder) BuildScheme(i *MyURL) (u *MyURL) {
 	u = i
-	if u.Host == "" {
-		return
-	}
 	if s.ssl {
 		u.Scheme = "https"
 	} else {
@@ -231,6 +228,7 @@ func (s *DownloadURLBuilder) BuildDownloadURL(i *MyURL) (u *MyURL, err error) {
 
 func (s *DownloadURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 	u = &MyURL{}
+	u = s.BuildScheme(u)
 	u, err = s.BuildDomain(ctx, u)
 	if err != nil {
 		return
@@ -239,7 +237,6 @@ func (s *DownloadURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 	if err != nil {
 		return
 	}
-	u = s.BuildScheme(u)
 	u, err = s.BuildDownloadURL(u)
 	if err != nil {
 		return
@@ -249,11 +246,11 @@ func (s *DownloadURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 
 func (s *StreamURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 	u = &MyURL{}
+	u = s.BuildScheme(u)
 	u, err = s.BuildDomain(ctx, u)
 	if err != nil {
 		return
 	}
-	u = s.BuildScheme(u)
 	u, err = s.BuildBaseURL(ctx, u)
 	if err != nil {
 		return
@@ -339,11 +336,11 @@ func (s *TorrentStatURLBuilder) BuildStatURL(i *MyURL) *MyURL {
 
 func (s *TorrentStatURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 	u = &MyURL{}
+	u = s.BuildScheme(u)
 	u, err = s.BuildDomain(ctx, u)
 	if err != nil {
 		return
 	}
-	u = s.BuildScheme(u)
 	u, err = s.BuildBaseURL(ctx, u)
 	if err != nil {
 		return
@@ -369,11 +366,11 @@ func (s *SubtitlesURLBuilder) BuildSubtitlesURL(i *MyURL) (u *MyURL) {
 
 func (s *SubtitlesURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 	u = &MyURL{}
+	u = s.BuildScheme(u)
 	u, err = s.BuildDomain(ctx, u)
 	if err != nil {
 		return
 	}
-	u = s.BuildScheme(u)
 	u, err = s.BuildBaseURL(ctx, u)
 	if err != nil {
 		return
@@ -384,11 +381,11 @@ func (s *SubtitlesURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 
 func (s *MediaProbeURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 	u = &MyURL{}
+	u = s.BuildScheme(u)
 	u, err = s.BuildDomain(ctx, u)
 	if err != nil {
 		return
 	}
-	u = s.BuildScheme(u)
 	u, err = s.BuildBaseURL(ctx, u)
 	if err != nil {
 		return
