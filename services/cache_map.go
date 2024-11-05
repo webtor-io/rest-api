@@ -25,7 +25,7 @@ func NewCacheMap(cl *http.Client) *CacheMap {
 }
 
 func (s *CacheMap) Get(ctx context.Context, url *MyURL) (bool, error) {
-	res, err := s.LazyMap.Get(url.String(), func() (interface{}, error) {
+	res, err := s.LazyMap.Get(url.Path, func() (interface{}, error) {
 		return s.get(ctx, url)
 	})
 	if err != nil {
