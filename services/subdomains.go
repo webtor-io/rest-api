@@ -7,7 +7,6 @@ import (
 	"strconv"
 
 	"github.com/pkg/errors"
-	"github.com/urfave/cli"
 )
 
 const (
@@ -19,7 +18,7 @@ type Subdomains struct {
 	nsp *NodesStat
 }
 
-func NewSubdomains(c *cli.Context, nsp *NodesStat) *Subdomains {
+func NewSubdomains(nsp *NodesStat) *Subdomains {
 	return &Subdomains{
 		nsp: nsp,
 	}
@@ -103,28 +102,13 @@ func (s *Subdomains) updateScoreByInfoHash(stats []NodeStatWithScore, infohash s
 	}
 	return stats, nil
 }
-func (s *Subdomains) updateScoreByBandwidth(stats []NodeStatWithScore) []NodeStatWithScore {
-	for i, v := range stats {
-		if v.NodeBandwidth.Low == 0 && v.NodeBandwidth.High == 0 {
-			continue
-		} else if v.NodeBandwidth.Current < v.NodeBandwidth.Low {
-			continue
-		} else if v.NodeBandwidth.Current >= v.NodeBandwidth.High {
-			stats[i].Score = 0
-		} else {
-			ratio := float64(v.NodeBandwidth.High-v.NodeBandwidth.Current) / float64(v.NodeBandwidth.High-v.NodeBandwidth.Low)
-			stats[i].Score = stats[i].Score * ratio * ratio
-		}
-	}
-	return stats
-}
 
 func (s *Subdomains) getScoredStats(ctx context.Context, infohash string, pool string) ([]NodeStatWithScore, error) {
 	stats, err := s.nsp.Get(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get nodes stat")
 	}
-	sc := []NodeStatWithScore{}
+	var sc []NodeStatWithScore
 	for _, s := range stats {
 		if s.Subdomain == "" {
 			continue
@@ -156,7 +140,6 @@ func (s *Subdomains) getScoredStatsByPool(sc []NodeStatWithScore, infohash strin
 	if pool != "" {
 		sc = s.filterByPool(sc, pool)
 	}
-	sc = s.updateScoreByBandwidth(sc)
 	sc, err := s.updateScoreByInfoHash(sc, infohash)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to update score by hash")

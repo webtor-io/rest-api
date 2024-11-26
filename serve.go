@@ -27,7 +27,6 @@ func configureServe(c *cli.Command) {
 	c.Flags = s.RegisterMagnet2TorrentFlags(c.Flags)
 	c.Flags = s.RegisterExportFlags(c.Flags)
 	c.Flags = s.RegisterNodesStatFlags(c.Flags)
-	c.Flags = s.RegisterPromClientFlags(c.Flags)
 }
 
 func serve(c *cli.Context) error {
@@ -55,7 +54,7 @@ func serve(c *cli.Context) error {
 	// Setting HTTP Client
 	httpCl := http.DefaultClient
 
-	// Seeting CacheMap
+	// Setting CacheMap
 	cm := s.NewCacheMap(httpCl)
 
 	// Setting Magnet2Torrent
@@ -68,17 +67,14 @@ func serve(c *cli.Context) error {
 	// Setting List
 	li := s.NewList()
 
-	// Setting PromClient
-	pcl := s.NewPromClient(c)
-
 	// Setting K8SClient
 	kcl := s.NewK8SClient()
 
 	// Setting NodeStat
-	ns := s.NewNodesStat(c, pcl, kcl)
+	ns := s.NewNodesStat(c, kcl)
 
 	// Setting Subdomains
-	sd := s.NewSubdomains(c, ns)
+	sd := s.NewSubdomains(ns)
 
 	// Setting URLBuilder
 	ub := s.NewURLBuilder(c, sd, cm)
