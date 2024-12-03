@@ -135,11 +135,7 @@ const ServiceSeparator = "~"
 
 func (s *BaseURLBuilder) BuildBaseURL(ctx context.Context, i *MyURL) (u *MyURL, err error) {
 	u = i
-	if len(s.r.Files) > 1 {
-		u.Path = "/" + s.r.ID + "/" + strings.TrimRight(s.r.Name+s.i.PathStr, "/")
-	} else {
-		u.Path = "/" + s.r.ID + "/" + strings.Trim(s.i.PathStr, "/")
-	}
+	u.Path = "/" + s.r.ID + "/" + strings.Trim(s.i.PathStr, "/")
 	q := u.Query()
 	if s.g.Query("api-key") != "" {
 		q.Add("api-key", s.g.Query("api-key"))
