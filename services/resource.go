@@ -120,23 +120,15 @@ func (s *ResourceMap) parseTorrent(b []byte) (*Resource, error) {
 	}
 	pieces := splitPieces(i.Pieces)
 
-	if len(i.Files) == 0 {
+	offset := int64(0)
+	for _, f := range i.UpvertedFiles() {
+		start, end := offset/i.PieceLength, (offset+f.Length)/i.PieceLength
 		r.Files = append(r.Files, &File{
-			Path:   []string{r.Name},
-			Size:   r.Size,
-			Pieces: pieces,
+			Path:   append([]string{i.Name}, f.Path...),
+			Size:   f.Length,
+			Pieces: pieces[start : end+1],
 		})
-	} else {
-		offset := int64(0)
-		for _, f := range i.Files {
-			start, end := offset/i.PieceLength, (offset+f.Length)/i.PieceLength
-			r.Files = append(r.Files, &File{
-				Path:   f.BestPath(),
-				Size:   f.Length,
-				Pieces: pieces[start : end+1],
-			})
-			offset += f.Length
-		}
+		offset += f.Length
 	}
 	r.MagnetURI = mi.Magnet(nil, &i).String()
 	r.Torrent = b
