@@ -62,7 +62,7 @@ func splitPieces(buf []byte) []Hash {
 }
 
 type ResourceMap struct {
-	lazymap.LazyMap
+	lazymap.LazyMap[*Resource]
 	ts            TorrentStoreGetter
 	m2t           Magnet2TorrentGetter
 	magnetTimeout time.Duration
@@ -78,7 +78,7 @@ type Magnet2TorrentGetter interface {
 
 func NewResourceMap(ts TorrentStoreGetter, m2t Magnet2TorrentGetter) *ResourceMap {
 	return &ResourceMap{
-		LazyMap: lazymap.New(&lazymap.Config{
+		LazyMap: lazymap.New[*Resource](&lazymap.Config{
 			Concurrency: 100,
 			Expire:      600 * time.Second,
 			// ErrorExpire: 30 * time.Second,
@@ -225,11 +225,7 @@ func (s *ResourceMap) Get(ctx context.Context, b []byte) (*Resource, error) {
 	if err != nil {
 		return nil, err
 	}
-	res, err := s.LazyMap.Get(r.ID, func() (interface{}, error) {
+	return s.LazyMap.Get(r.ID, func() (*Resource, error) {
 		return s.get(ctx, r, b)
 	})
-	if err != nil {
-		return nil, err
-	}
-	return res.(*Resource), nil
 }
