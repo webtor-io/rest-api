@@ -94,9 +94,10 @@ type ExportMetaItem struct {
 }
 
 type ExportMeta struct {
-	Transcode    bool `json:"transcode,omitempty"`
-	Multibitrate bool `json:"multibitrate,omitempty"`
-	Cache        bool `json:"cache,omitempty"`
+	Transcode      bool `json:"transcode,omitempty"`
+	Multibitrate   bool `json:"multibitrate,omitempty"`
+	Cache          bool `json:"cache,omitempty"`
+	TranscodeCache bool `json:"transcode_cache,omitempty"`
 }
 
 type ExportResponse struct {

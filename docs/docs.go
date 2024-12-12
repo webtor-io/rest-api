@@ -371,6 +371,9 @@ const docTemplate = `{
                 },
                 "transcode": {
                     "type": "boolean"
+                },
+                "transcode_cache": {
+                    "type": "boolean"
                 }
             }
         },

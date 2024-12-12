@@ -27,6 +27,8 @@ definitions:
         type: boolean
       transcode:
         type: boolean
+      transcode_cache:
+        type: boolean
     type: object
   services.ExportPreloadType:
     enum:

@@ -13,15 +13,17 @@ import (
 
 type MyURL struct {
 	url.URL
-	cached       bool
-	transcode    bool
-	multibitrate bool
+	cached          bool
+	transcode       bool
+	multibitrate    bool
+	transcodeCached bool
 }
 
 func (s *MyURL) BuildExportMeta() *ExportMeta {
 	return &ExportMeta{
-		Cache:     s.cached,
-		Transcode: s.transcode,
+		Cache:          s.cached,
+		Transcode:      s.transcode,
+		TranscodeCache: s.transcodeCached,
 	}
 }
 
@@ -251,18 +253,23 @@ func (s *StreamURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 	if err != nil {
 		return
 	}
-	u, err = s.BuildStreamURL(u, "/index.m3u8")
+	u, err = s.BuildStreamURL(ctx, u, "/index.m3u8")
 	if err != nil {
 		return
 	}
 	return
 }
 
-func (s *StreamURLBuilder) BuildTranscodeURL(i *MyURL, suffix string) (u *MyURL) {
+func (s *StreamURLBuilder) BuildTranscodeURL(ctx context.Context, i *MyURL, suffix string) (u *MyURL, err error) {
 	u = i
 	u.Path += ServiceSeparator + string(ServiceTypeTranscode) + suffix
 	u.transcode = true
-	return u
+	cached, err := s.cm.Get(ctx, u)
+	if err != nil {
+		return nil, err
+	}
+	u.transcodeCached = cached
+	return u, nil
 }
 
 func (s *StreamURLBuilder) BuildVODURL(i *MyURL, suffix string) (u *MyURL) {
@@ -271,10 +278,10 @@ func (s *StreamURLBuilder) BuildVODURL(i *MyURL, suffix string) (u *MyURL) {
 	return u
 }
 
-func (s *StreamURLBuilder) BuildVideoStreamURL(i *MyURL, suffix string) (u *MyURL, err error) {
+func (s *StreamURLBuilder) BuildVideoStreamURL(ctx context.Context, i *MyURL, suffix string) (u *MyURL, err error) {
 	u = i
 	if shouldTranscode(s.i.Ext) {
-		u = s.BuildTranscodeURL(i, suffix)
+		u, err = s.BuildTranscodeURL(ctx, i, suffix)
 		return
 	} else {
 		u = s.BuildVODURL(i, suffix)
@@ -282,10 +289,10 @@ func (s *StreamURLBuilder) BuildVideoStreamURL(i *MyURL, suffix string) (u *MyUR
 	return
 }
 
-func (s *StreamURLBuilder) BuildAudioStreamURL(i *MyURL, suffix string) (u *MyURL, err error) {
+func (s *StreamURLBuilder) BuildAudioStreamURL(ctx context.Context, i *MyURL, suffix string) (u *MyURL, err error) {
 	u = i
 	if shouldTranscode(s.i.Ext) {
-		u = s.BuildTranscodeURL(i, suffix)
+		u, err = s.BuildTranscodeURL(ctx, i, suffix)
 		return
 	}
 	return
@@ -305,13 +312,13 @@ func (s *StreamURLBuilder) BuildSubtitleStreamURL(i *MyURL) (u *MyURL, err error
 	return
 }
 
-func (s *StreamURLBuilder) BuildStreamURL(i *MyURL, suffix string) (u *MyURL, err error) {
+func (s *StreamURLBuilder) BuildStreamURL(ctx context.Context, i *MyURL, suffix string) (u *MyURL, err error) {
 	u = i
 	switch s.i.MediaFormat {
 	case Video:
-		return s.BuildVideoStreamURL(u, suffix)
+		return s.BuildVideoStreamURL(ctx, u, suffix)
 	case Audio:
-		return s.BuildAudioStreamURL(u, suffix)
+		return s.BuildAudioStreamURL(ctx, u, suffix)
 	case Subtitle:
 		return s.BuildSubtitleStreamURL(u)
 	}
@@ -386,7 +393,7 @@ func (s *MediaProbeURLBuilder) Build(ctx context.Context) (u *MyURL, err error) 
 	if err != nil {
 		return
 	}
-	u, err = s.BuildStreamURL(u, "/index.json")
+	u, err = s.BuildStreamURL(ctx, u, "/index.json")
 	if err != nil {
 		return
 	}
