@@ -145,7 +145,9 @@ func (s *VideoTagBuider) BuildTrack(ctx context.Context, i *ListItem) (*ExportTr
 }
 
 func (s *VideoTagBuider) BuildAttachedResources(ctx context.Context, et *ExportTag) (*ExportTag, error) {
-	r, err := s.l.Get(s.r, &ListGetArgs{})
+	r, err := s.l.Get(s.r, &ListGetArgs{
+		Path: s.i.Path[0 : len(s.i.Path)-1],
+	})
 	if err != nil {
 		return nil, err
 	}
