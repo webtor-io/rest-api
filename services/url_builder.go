@@ -28,36 +28,45 @@ func (s *MyURL) BuildExportMeta() *ExportMeta {
 }
 
 type URLBuilder struct {
-	sd        *Subdomains
-	cm        *CacheMap
-	domain    string
-	ssl       bool
-	apiSecret string
-	apiKey    string
+	sd                *Subdomains
+	cm                *CacheMap
+	domain            string
+	ssl               bool
+	apiSecret         string
+	apiKey            string
+	useSubdomains     bool
+	subdomainsK8SPool string
+	pathPrefix        string
 }
 
 func NewURLBuilder(c *cli.Context, sd *Subdomains, cm *CacheMap) *URLBuilder {
 	return &URLBuilder{
-		sd:        sd,
-		cm:        cm,
-		domain:    c.String(exportDomainFlag),
-		ssl:       c.BoolT(exportSSLFlag),
-		apiKey:    c.String(exportApiKeyFlag),
-		apiSecret: c.String(exportApiSecretFlag),
+		sd:                sd,
+		cm:                cm,
+		domain:            c.String(exportDomainFlag),
+		ssl:               c.BoolT(exportSSLFlag),
+		apiKey:            c.String(exportApiKeyFlag),
+		apiSecret:         c.String(exportApiSecretFlag),
+		useSubdomains:     c.BoolT(exportUseSubdomainsFlag),
+		subdomainsK8SPool: c.String(exportSubdomainsK8SPoolFlag),
+		pathPrefix:        c.String(exportPathPrefixFlag),
 	}
 }
 
 func (s *URLBuilder) Build(ctx context.Context, r *Resource, i *ListItem, g ParamGetter, et ExportType) (*MyURL, error) {
 	bubc := BaseURLBuilder{
-		sd:        s.sd,
-		cm:        s.cm,
-		r:         r,
-		i:         i,
-		g:         g,
-		domain:    s.domain,
-		ssl:       s.ssl,
-		apiKey:    s.apiKey,
-		apiSecret: s.apiSecret,
+		sd:                s.sd,
+		cm:                s.cm,
+		r:                 r,
+		i:                 i,
+		g:                 g,
+		domain:            s.domain,
+		ssl:               s.ssl,
+		apiKey:            s.apiKey,
+		apiSecret:         s.apiSecret,
+		useSubdomains:     s.useSubdomains,
+		subdomainsK8SPool: s.subdomainsK8SPool,
+		pathPrefix:        s.pathPrefix,
 	}
 	switch et {
 	case ExportTypeDownload:
@@ -92,15 +101,18 @@ func (s *URLBuilder) Build(ctx context.Context, r *Resource, i *ListItem, g Para
 }
 
 type BaseURLBuilder struct {
-	sd        *Subdomains
-	cm        *CacheMap
-	r         *Resource
-	i         *ListItem
-	g         ParamGetter
-	domain    string
-	ssl       bool
-	apiSecret string
-	apiKey    string
+	sd                *Subdomains
+	cm                *CacheMap
+	r                 *Resource
+	i                 *ListItem
+	g                 ParamGetter
+	domain            string
+	ssl               bool
+	apiSecret         string
+	apiKey            string
+	subdomainsK8SPool string
+	useSubdomains     bool
+	pathPrefix        string
 }
 
 type DownloadURLBuilder struct {
@@ -137,7 +149,7 @@ const ServiceSeparator = "~"
 
 func (s *BaseURLBuilder) BuildBaseURL(ctx context.Context, i *MyURL) (u *MyURL, err error) {
 	u = i
-	u.Path = "/" + s.r.ID + "/" + strings.Trim(s.i.PathStr, "/")
+	u.Path = s.pathPrefix + s.r.ID + "/" + strings.Trim(s.i.PathStr, "/")
 	q := u.Query()
 	if s.g.Query("api-key") != "" {
 		q.Add("api-key", s.g.Query("api-key"))
@@ -193,13 +205,15 @@ func (s *BaseURLBuilder) BuildDomain(ctx context.Context, i *MyURL) (u *MyURL, e
 		return u, nil
 	}
 	domain := s.domain
-	pool := "seeder"
-	subs, err := s.sd.Get(ctx, s.r.ID, pool)
-	if err != nil {
-		return nil, err
-	}
-	if len(subs) > 0 {
-		domain = subs[0] + "." + domain
+	if s.useSubdomains {
+		pool := s.subdomainsK8SPool
+		subs, err := s.sd.Get(ctx, s.r.ID, pool)
+		if err != nil {
+			return nil, err
+		}
+		if len(subs) > 0 {
+			domain = subs[0] + "." + domain
+		}
 	}
 	u.Host = domain
 	return

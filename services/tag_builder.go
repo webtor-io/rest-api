@@ -151,7 +151,7 @@ func (s *VideoTagBuider) BuildAttachedResources(ctx context.Context, et *ExportT
 	if err != nil {
 		return nil, err
 	}
-	tt := []ExportTrack{}
+	var tt []ExportTrack
 	for _, v := range r.Items {
 		if v.SameDirectory(s.i) && v.MediaFormat == Subtitle && strings.HasPrefix(v.Name, strings.TrimSuffix(s.i.Name, "."+s.i.Ext)) {
 			t, err := s.BuildTrack(ctx, &v)

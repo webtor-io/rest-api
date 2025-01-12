@@ -9,10 +9,13 @@ import (
 )
 
 const (
-	exportDomainFlag    = "export-domain"
-	exportSSLFlag       = "export-ssl"
-	exportApiKeyFlag    = "export-api-key"
-	exportApiSecretFlag = "export-api-secret"
+	exportDomainFlag            = "export-domain"
+	exportUseSubdomainsFlag     = "export-use-subdomains"
+	exportSubdomainsK8SPoolFlag = "export-subdomains-k8s-pool"
+	exportSSLFlag               = "export-ssl"
+	exportApiKeyFlag            = "export-api-key"
+	exportApiSecretFlag         = "export-api-secret"
+	exportPathPrefixFlag        = "export-path-prefix"
 )
 
 func RegisterExportFlags(f []cli.Flag) []cli.Flag {
@@ -39,6 +42,23 @@ func RegisterExportFlags(f []cli.Flag) []cli.Flag {
 			Usage:  "export api token",
 			Value:  "",
 			EnvVar: "EXPORT_API_SECRET",
+		},
+		cli.BoolTFlag{
+			Name:   exportUseSubdomainsFlag,
+			Usage:  "export use subdomains",
+			EnvVar: "EXPORT_USE_SUBDOMAINS",
+		},
+		cli.StringFlag{
+			Name:   exportSubdomainsK8SPoolFlag,
+			Usage:  "export k8s pool",
+			EnvVar: "EXPORT_K8S_POOL",
+			Value:  "seeder",
+		},
+		cli.StringFlag{
+			Name:   exportPathPrefixFlag,
+			Usage:  "export path prefix",
+			EnvVar: "EXPORT_PATH_PREFIX",
+			Value:  "/",
 		},
 	)
 }
