@@ -12,7 +12,6 @@ const (
 	exportDomainFlag            = "export-domain"
 	exportUseSubdomainsFlag     = "export-use-subdomains"
 	exportSubdomainsK8SPoolFlag = "export-subdomains-k8s-pool"
-	exportSSLFlag               = "export-ssl"
 	exportApiKeyFlag            = "export-api-key"
 	exportApiSecretFlag         = "export-api-secret"
 	exportPathPrefixFlag        = "export-path-prefix"
@@ -47,11 +46,6 @@ func RegisterExportFlags(f []cli.Flag) []cli.Flag {
 			Usage:  "export domain",
 			Value:  "",
 			EnvVar: "EXPORT_DOMAIN",
-		},
-		cli.BoolTFlag{
-			Name:   exportSSLFlag,
-			Usage:  "export ssl",
-			EnvVar: "EXPORT_SSL",
 		},
 		cli.StringFlag{
 			Name:   exportApiKeyFlag,
@@ -112,7 +106,7 @@ type Export struct {
 }
 
 func ExportGetArgsFromParams(g ParamGetter) (*ExportGetArgs, error) {
-	types := []ExportType{}
+	var types []ExportType
 	if g.Query("types") != "" {
 		for _, k := range strings.Split(g.Query("types"), ",") {
 			kk := strings.TrimSpace(k)
@@ -217,9 +211,6 @@ func (s *DownloadExporter) Export(ctx context.Context, r *Resource, i *ListItem,
 		return nil, err
 	}
 
-	if err != nil {
-		return nil, err
-	}
 	return &ExportItem{
 		Type: string(s.Type()),
 		URL:  url.String(),

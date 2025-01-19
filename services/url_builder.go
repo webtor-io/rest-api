@@ -31,7 +31,6 @@ type URLBuilder struct {
 	sd                *Subdomains
 	cm                *CacheMap
 	domain            string
-	ssl               bool
 	apiSecret         string
 	apiKey            string
 	useSubdomains     bool
@@ -44,7 +43,6 @@ func NewURLBuilder(c *cli.Context, sd *Subdomains, cm *CacheMap) *URLBuilder {
 		sd:                sd,
 		cm:                cm,
 		domain:            c.String(exportDomainFlag),
-		ssl:               c.BoolT(exportSSLFlag),
 		apiKey:            c.String(exportApiKeyFlag),
 		apiSecret:         c.String(exportApiSecretFlag),
 		useSubdomains:     c.BoolT(exportUseSubdomainsFlag),
@@ -61,7 +59,6 @@ func (s *URLBuilder) Build(ctx context.Context, r *Resource, i *ListItem, g Para
 		i:                 i,
 		g:                 g,
 		domain:            s.domain,
-		ssl:               s.ssl,
 		apiKey:            s.apiKey,
 		apiSecret:         s.apiSecret,
 		useSubdomains:     s.useSubdomains,
@@ -107,7 +104,6 @@ type BaseURLBuilder struct {
 	i                 *ListItem
 	g                 ParamGetter
 	domain            string
-	ssl               bool
 	apiSecret         string
 	apiKey            string
 	subdomainsK8SPool string
@@ -189,13 +185,17 @@ func (s *BaseURLBuilder) BuildBaseURL(ctx context.Context, i *MyURL) (u *MyURL, 
 	return
 }
 
-func (s *BaseURLBuilder) BuildScheme(i *MyURL) (u *MyURL) {
+func (s *BaseURLBuilder) BuildScheme(i *MyURL) (u *MyURL, err error) {
 	u = i
-	if s.ssl {
-		u.Scheme = "https"
-	} else {
+	if s.domain == "" {
 		u.Scheme = "http"
+		return
 	}
+	du, err := url.Parse(s.domain)
+	if err != nil {
+		return nil, err
+	}
+	u.Scheme = du.Scheme
 	return
 }
 
@@ -204,7 +204,11 @@ func (s *BaseURLBuilder) BuildDomain(ctx context.Context, i *MyURL) (u *MyURL, e
 	if s.domain == "" {
 		return u, nil
 	}
-	domain := s.domain
+	du, err := url.Parse(s.domain)
+	if err != nil {
+		return nil, err
+	}
+	domain := du.Host
 	if s.useSubdomains {
 		pool := s.subdomainsK8SPool
 		subs, err := s.sd.Get(ctx, s.r.ID, pool)
@@ -240,7 +244,10 @@ func (s *DownloadURLBuilder) BuildDownloadURL(i *MyURL) (u *MyURL, err error) {
 
 func (s *DownloadURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 	u = &MyURL{}
-	u = s.BuildScheme(u)
+	u, err = s.BuildScheme(u)
+	if err != nil {
+		return
+	}
 	u, err = s.BuildDomain(ctx, u)
 	if err != nil {
 		return
@@ -258,7 +265,10 @@ func (s *DownloadURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 
 func (s *StreamURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 	u = &MyURL{}
-	u = s.BuildScheme(u)
+	u, err = s.BuildScheme(u)
+	if err != nil {
+		return
+	}
 	u, err = s.BuildDomain(ctx, u)
 	if err != nil {
 		return
@@ -353,7 +363,10 @@ func (s *TorrentStatURLBuilder) BuildStatURL(i *MyURL) *MyURL {
 
 func (s *TorrentStatURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 	u = &MyURL{}
-	u = s.BuildScheme(u)
+	u, err = s.BuildScheme(u)
+	if err != nil {
+		return
+	}
 	u, err = s.BuildDomain(ctx, u)
 	if err != nil {
 		return
@@ -383,7 +396,10 @@ func (s *SubtitlesURLBuilder) BuildSubtitlesURL(i *MyURL) (u *MyURL) {
 
 func (s *SubtitlesURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 	u = &MyURL{}
-	u = s.BuildScheme(u)
+	u, err = s.BuildScheme(u)
+	if err != nil {
+		return
+	}
 	u, err = s.BuildDomain(ctx, u)
 	if err != nil {
 		return
@@ -398,7 +414,10 @@ func (s *SubtitlesURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 
 func (s *MediaProbeURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 	u = &MyURL{}
-	u = s.BuildScheme(u)
+	u, err = s.BuildScheme(u)
+	if err != nil {
+		return
+	}
 	u, err = s.BuildDomain(ctx, u)
 	if err != nil {
 		return
