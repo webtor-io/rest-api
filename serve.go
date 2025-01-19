@@ -27,11 +27,12 @@ func configureServe(c *cli.Command) {
 	c.Flags = s.RegisterMagnet2TorrentFlags(c.Flags)
 	c.Flags = s.RegisterExportFlags(c.Flags)
 	c.Flags = s.RegisterNodesStatFlags(c.Flags)
+	c.Flags = s.RegisterVideoInfoServiceFlags(c.Flags)
 }
 
 func serve(c *cli.Context) error {
 
-	services := []cs.Servable{}
+	var services []cs.Servable
 
 	// Setting Probe
 	probe := cs.NewProbe(c)
@@ -79,25 +80,42 @@ func serve(c *cli.Context) error {
 	// Setting URLBuilder
 	ub := s.NewURLBuilder(c, sd, cm)
 
+	var exporters []s.Exporter
+
 	// Setting DownloadExporter
 	de := s.NewDownloadExporter(ub)
+	if de != nil {
+		exporters = append(exporters, de)
+	}
 
 	tb := s.NewTagBuilder(ub, li)
 
 	// Setting StreamExporter
 	se := s.NewStreamExporter(ub, tb)
+	if se != nil {
+		exporters = append(exporters, se)
+	}
 
 	// Setting TorrentStatExporter
 	tse := s.NewTorrentStatExporter(ub)
+	if tse != nil {
+		exporters = append(exporters, tse)
+	}
 
 	// Setting SubtitlesExporter
-	vie := s.NewSubtitlesExporter(ub)
+	vie := s.NewSubtitlesExporter(c, ub)
+	if vie != nil {
+		exporters = append(exporters, vie)
+	}
 
 	// Setting MediaProbeExporter
 	mpe := s.NewMediaProbeExporter(ub)
+	if mpe != nil {
+		exporters = append(exporters, mpe)
+	}
 
 	// Setting Export
-	ex := s.NewExport(de, se, tse, vie, mpe)
+	ex := s.NewExport(exporters...)
 
 	// Setting Web
 	web := s.NewWeb(c, rm, li, ex)

@@ -18,6 +18,28 @@ const (
 	exportPathPrefixFlag        = "export-path-prefix"
 )
 
+const (
+	videoInfoServiceHostFlag = "video-info-host"
+	videoInfoServicePortFlag = "video-info-port"
+)
+
+func RegisterVideoInfoServiceFlags(f []cli.Flag) []cli.Flag {
+	return append(f,
+		cli.StringFlag{
+			Name:   videoInfoServiceHostFlag,
+			Usage:  "video info service host",
+			EnvVar: "VIDEO_INFO_SERVICE_HOST",
+			Value:  "",
+		},
+		cli.IntFlag{
+			Name:   videoInfoServicePortFlag,
+			Usage:  "video info service port",
+			EnvVar: "VIDEO_INFO_SERVICE_PORT",
+			Value:  0,
+		},
+	)
+}
+
 func RegisterExportFlags(f []cli.Flag) []cli.Flag {
 	return append(f,
 		cli.StringFlag{
@@ -281,7 +303,10 @@ func (s *TorrentStatExporter) Export(ctx context.Context, r *Resource, i *ListIt
 	}, nil
 }
 
-func NewSubtitlesExporter(ub *URLBuilder) *SubtitlesExporter {
+func NewSubtitlesExporter(c *cli.Context, ub *URLBuilder) *SubtitlesExporter {
+	if c.String(videoInfoServiceHostFlag) == "" && c.Int(videoInfoServicePortFlag) == 0 {
+		return nil
+	}
 	return &SubtitlesExporter{
 		BaseExporter: BaseExporter{
 			ub:         ub,
