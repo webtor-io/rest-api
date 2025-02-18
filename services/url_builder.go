@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"github.com/dgrijalva/jwt-go"
+	"github.com/pkg/errors"
 	"net/url"
 	"strings"
 
@@ -33,6 +34,7 @@ type URLBuilder struct {
 	domain            string
 	apiSecret         string
 	apiKey            string
+	apiRole           string
 	useSubdomains     bool
 	subdomainsK8SPool string
 	pathPrefix        string
@@ -45,6 +47,7 @@ func NewURLBuilder(c *cli.Context, sd *Subdomains, cm *CacheMap) *URLBuilder {
 		domain:            c.String(exportDomainFlag),
 		apiKey:            c.String(exportApiKeyFlag),
 		apiSecret:         c.String(exportApiSecretFlag),
+		apiRole:           c.String(exportApiRoleFlag),
 		useSubdomains:     c.BoolT(exportUseSubdomainsFlag),
 		subdomainsK8SPool: c.String(exportSubdomainsK8SPoolFlag),
 		pathPrefix:        c.String(exportPathPrefixFlag),
@@ -61,6 +64,7 @@ func (s *URLBuilder) Build(ctx context.Context, r *Resource, i *ListItem, g Para
 		domain:            s.domain,
 		apiKey:            s.apiKey,
 		apiSecret:         s.apiSecret,
+		apiRole:           s.apiRole,
 		useSubdomains:     s.useSubdomains,
 		subdomainsK8SPool: s.subdomainsK8SPool,
 		pathPrefix:        s.pathPrefix,
@@ -106,6 +110,7 @@ type BaseURLBuilder struct {
 	domain            string
 	apiSecret         string
 	apiKey            string
+	apiRole           string
 	subdomainsK8SPool string
 	useSubdomains     bool
 	pathPrefix        string
@@ -143,38 +148,118 @@ const (
 
 const ServiceSeparator = "~"
 
+func (s *BaseURLBuilder) getApiKey() string {
+	if s.g.Query("api-key") != "" {
+		return s.g.Query("api-key")
+	}
+	if s.g.GetHeader("X-Api-Key") != "" {
+		return s.g.GetHeader("X-Api-Key")
+	}
+	if s.apiKey != "" {
+		return s.apiKey
+	}
+	return ""
+}
+
+func (s *BaseURLBuilder) getToken() (string, error) {
+	if s.g.Query("token") != "" {
+		return s.g.Query("token"), nil
+	}
+	if s.g.GetHeader("X-Token") != "" {
+		return s.g.GetHeader("X-Token"), nil
+	}
+	if s.apiSecret != "" {
+		claims := jwt.MapClaims{}
+		if s.apiRole != "" {
+			claims["role"] = s.apiRole
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenString, err := token.SignedString([]byte(s.apiSecret))
+		if err != nil {
+			return "", err
+		}
+		return tokenString, nil
+	}
+	return "", nil
+}
+
+func (s *BaseURLBuilder) getClaims() (jwt.MapClaims, error) {
+
+	tokenString, err := s.getToken()
+
+	if err != nil {
+		return nil, err
+	}
+
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, errors.Errorf("unexpected signing method=%v", token.Header["alg"])
+		}
+		return []byte(s.apiSecret), nil
+	})
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to parse token")
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok || !token.Valid {
+		return nil, errors.Wrapf(err, "failed to validate token")
+	}
+	return claims, nil
+}
+
+func (s *BaseURLBuilder) getRole() (string, error) {
+	claims, err := s.getClaims()
+	if err != nil {
+		return "", err
+	}
+	if r, ok := claims["role"].(string); ok {
+		return r, nil
+	}
+	return "", nil
+}
+
+func (s *BaseURLBuilder) getUserID() string {
+	if s.g.Query("user-id") != "" {
+		return s.g.Query("user-id")
+	}
+	if s.g.GetHeader("X-User-Id") != "" {
+		return s.g.GetHeader("X-User-Id")
+	}
+	return ""
+}
+
+func (s *BaseURLBuilder) getRequestID() string {
+	if s.g.Query("request-id") != "" {
+		return s.g.Query("request-id")
+	}
+	if s.g.GetHeader("X-Request-Id") != "" {
+		return s.g.GetHeader("X-Request-Id")
+	}
+	return ""
+}
+
 func (s *BaseURLBuilder) BuildBaseURL(ctx context.Context, i *MyURL) (u *MyURL, err error) {
 	u = i
 	u.Path = s.pathPrefix + s.r.ID + "/" + strings.Trim(s.i.PathStr, "/")
 	q := u.Query()
-	if s.g.Query("api-key") != "" {
-		q.Add("api-key", s.g.Query("api-key"))
-	} else if s.g.GetHeader("X-Api-Key") != "" {
-		q.Add("api-key", s.g.GetHeader("X-Api-Key"))
-	} else if s.apiKey != "" {
-		q.Add("api-key", s.apiKey)
+	apiKey := s.getApiKey()
+	if apiKey != "" {
+		q.Add("api-key", apiKey)
 	}
-	if s.g.Query("token") != "" {
-		q.Add("token", s.g.Query("token"))
-	} else if s.g.GetHeader("X-Token") != "" {
-		q.Add("token", s.g.GetHeader("X-Token"))
-	} else if s.apiSecret != "" {
-		token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{})
-		tokenString, err := token.SignedString([]byte(s.apiSecret))
-		if err != nil {
-			return nil, err
-		}
-		q.Add("token", tokenString)
+	token, err := s.getToken()
+	if err != nil {
+		return nil, err
 	}
-	if s.g.Query("user-id") != "" {
-		q.Add("user-id", s.g.Query("user-id"))
-	} else if s.g.GetHeader("X-User-Id") != "" {
-		q.Add("user-id", s.g.GetHeader("X-User-Id"))
+	if token != "" {
+		q.Add("token", token)
 	}
-	if s.g.Query("request-id") != "" {
-		q.Add("request-id", s.g.Query("request-id"))
-	} else if s.g.GetHeader("X-Request-Id") != "" {
-		q.Add("request-id", s.g.GetHeader("X-Request-Id"))
+	userID := s.getUserID()
+	if userID != "" {
+		q.Add("user-id", userID)
+	}
+	requestID := s.getRequestID()
+	if requestID != "" {
+		q.Add("request-id", requestID)
 	}
 	u.RawQuery = q.Encode()
 	cached, err := s.cm.Get(ctx, u)
@@ -211,7 +296,11 @@ func (s *BaseURLBuilder) BuildDomain(ctx context.Context, i *MyURL) (u *MyURL, e
 	domain := du.Host
 	if s.useSubdomains {
 		pool := s.subdomainsK8SPool
-		subs, err := s.sd.Get(ctx, s.r.ID, pool)
+		role, err := s.getRole()
+		if err != nil {
+			return nil, err
+		}
+		subs, err := s.sd.Get(ctx, s.r.ID, pool, role)
 		if err != nil {
 			return nil, err
 		}

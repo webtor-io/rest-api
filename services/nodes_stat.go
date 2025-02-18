@@ -29,9 +29,11 @@ func RegisterNodesStatFlags(f []cli.Flag) []cli.Flag {
 }
 
 type NodeStat struct {
-	Name      string
-	Pools     []string
-	Subdomain string
+	Name         string
+	Pools        []string
+	Subdomain    string
+	RolesAllowed []string
+	RolesDenied  []string
 }
 
 type NodesStat struct {
@@ -57,13 +59,13 @@ func (s *NodesStat) Get(ctx context.Context) ([]NodeStat, error) {
 	return s.LazyMap.Get("", func() ([]NodeStat, error) {
 		cl, err := s.kcl.Get()
 		if err != nil {
-			return nil, errors.Wrap(err, "Failed to get k8s client")
+			return nil, errors.Wrap(err, "failed to get k8s client")
 		}
 		nodes, err := cl.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 		if err != nil {
-			return nil, errors.Wrap(err, "Failed to get nodes")
+			return nil, errors.Wrap(err, "failed to get nodes")
 		}
-		res := []NodeStat{}
+		var res []NodeStat
 		for _, n := range nodes.Items {
 			ready := false
 			for _, c := range n.Status.Conditions {
@@ -78,7 +80,7 @@ func (s *NodesStat) Get(ctx context.Context) ([]NodeStat, error) {
 			if v, ok := n.GetLabels()[fmt.Sprintf("%vsubdomain", s.labelPrefix)]; ok {
 				subdomain = v
 			}
-			pools := []string{}
+			var pools []string
 			for k, v := range n.GetLabels() {
 				if strings.HasPrefix(k, s.labelPrefix) && strings.HasSuffix(k, "pool") && v == "true" {
 					pools = append(pools, strings.TrimSuffix(strings.TrimPrefix(k, s.labelPrefix), "-pool"))
@@ -86,11 +88,24 @@ func (s *NodesStat) Get(ctx context.Context) ([]NodeStat, error) {
 			}
 
 			res = append(res, NodeStat{
-				Name:      n.Name,
-				Subdomain: subdomain,
-				Pools:     pools,
+				Name:         n.Name,
+				Subdomain:    subdomain,
+				Pools:        pools,
+				RolesAllowed: s.getLabelList(n, "roles-allowed"),
+				RolesDenied:  s.getLabelList(n, "roles-denied"),
 			})
 		}
 		return res, nil
 	})
+}
+
+func (s *NodesStat) getLabelList(n corev1.Node, name string) []string {
+	var list []string
+	if v, ok := n.GetLabels()[fmt.Sprintf("%v%v", s.labelPrefix, name)]; ok {
+		list = strings.Split(v, ",")
+		for i := range list {
+			list[i] = strings.TrimSpace(list[i])
+		}
+	}
+	return list
 }

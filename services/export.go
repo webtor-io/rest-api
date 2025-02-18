@@ -14,6 +14,7 @@ const (
 	exportSubdomainsK8SPoolFlag = "export-subdomains-k8s-pool"
 	exportApiKeyFlag            = "export-api-key"
 	exportApiSecretFlag         = "export-api-secret"
+	exportApiRoleFlag           = "export-api-role"
 	exportPathPrefixFlag        = "export-path-prefix"
 )
 
@@ -58,6 +59,12 @@ func RegisterExportFlags(f []cli.Flag) []cli.Flag {
 			Usage:  "export api token",
 			Value:  "",
 			EnvVar: "EXPORT_API_SECRET",
+		},
+		cli.StringFlag{
+			Name:   exportApiRoleFlag,
+			Usage:  "export api role",
+			Value:  "free",
+			EnvVar: "EXPORT_API_ROLE",
 		},
 		cli.BoolTFlag{
 			Name:   exportUseSubdomainsFlag,

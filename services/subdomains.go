@@ -42,6 +42,32 @@ func (s *Subdomains) filterByPool(stats []NodeStatWithScore, pool string) []Node
 	return res
 }
 
+func (s *Subdomains) filterByRole(stats []NodeStatWithScore, role string) []NodeStatWithScore {
+	var res []NodeStatWithScore
+	for _, st := range stats {
+		if len(st.RolesAllowed) > 0 {
+			for _, r := range st.RolesAllowed {
+				if role == r {
+					res = append(res, st)
+					break
+				}
+			}
+		} else if len(st.RolesDenied) > 0 {
+			add := true
+			for _, r := range st.RolesDenied {
+				if role == r {
+					add = false
+				}
+			}
+			if add {
+				res = append(res, st)
+			}
+		}
+	}
+	return res
+
+}
+
 func (s *Subdomains) filterWithZeroScore(stats []NodeStatWithScore) []NodeStatWithScore {
 	var res []NodeStatWithScore
 	for _, st := range stats {
@@ -103,7 +129,7 @@ func (s *Subdomains) updateScoreByInfoHash(stats []NodeStatWithScore, infohash s
 	return stats, nil
 }
 
-func (s *Subdomains) getScoredStats(ctx context.Context, infohash string, pool string) ([]NodeStatWithScore, error) {
+func (s *Subdomains) getScoredStats(ctx context.Context, infohash string, pool string, role string) ([]NodeStatWithScore, error) {
 	stats, err := s.nsp.Get(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get nodes stat")
@@ -133,12 +159,15 @@ func (s *Subdomains) getScoredStats(ctx context.Context, infohash string, pool s
 	if !found {
 		pool = ""
 	}
-	return s.getScoredStatsByPool(sc, infohash, pool)
+	return s.getScoredStatsByPoolAndRole(sc, infohash, pool, role)
 }
 
-func (s *Subdomains) getScoredStatsByPool(sc []NodeStatWithScore, infohash string, pool string) ([]NodeStatWithScore, error) {
+func (s *Subdomains) getScoredStatsByPoolAndRole(sc []NodeStatWithScore, infohash string, pool string, role string) ([]NodeStatWithScore, error) {
 	if pool != "" {
 		sc = s.filterByPool(sc, pool)
+	}
+	if role != "" {
+		sc = s.filterByRole(sc, role)
 	}
 	sc, err := s.updateScoreByInfoHash(sc, infohash)
 	if err != nil {
@@ -151,8 +180,8 @@ func (s *Subdomains) getScoredStatsByPool(sc []NodeStatWithScore, infohash strin
 	return sc, nil
 }
 
-func (s *Subdomains) Get(ctx context.Context, infohash string, pool string) ([]string, error) {
-	stats, err := s.getScoredStats(ctx, infohash, pool)
+func (s *Subdomains) Get(ctx context.Context, infohash string, pool string, role string) ([]string, error) {
+	stats, err := s.getScoredStats(ctx, infohash, pool, role)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get sorted nodes stat")
 	}
