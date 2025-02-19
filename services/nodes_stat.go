@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -95,6 +96,9 @@ func (s *NodesStat) Get(ctx context.Context) ([]NodeStat, error) {
 				RolesDenied:  s.getLabelList(n, "roles-denied"),
 			})
 		}
+		sort.Slice(res, func(i, j int) bool {
+			return res[i].Name < res[j].Name
+		})
 		return res, nil
 	})
 }
