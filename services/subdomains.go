@@ -45,23 +45,8 @@ func (s *Subdomains) filterByPool(stats []NodeStatWithScore, pool string) []Node
 func (s *Subdomains) filterByRole(stats []NodeStatWithScore, role string) []NodeStatWithScore {
 	var res []NodeStatWithScore
 	for _, st := range stats {
-		if len(st.RolesAllowed) > 0 {
-			for _, r := range st.RolesAllowed {
-				if role == r {
-					res = append(res, st)
-					break
-				}
-			}
-		} else if len(st.RolesDenied) > 0 {
-			add := true
-			for _, r := range st.RolesDenied {
-				if role == r {
-					add = false
-				}
-			}
-			if add {
-				res = append(res, st)
-			}
+		if st.IsAllowed(role) {
+			res = append(res, st)
 		}
 	}
 	return res

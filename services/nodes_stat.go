@@ -37,6 +37,26 @@ type NodeStat struct {
 	RolesDenied  []string
 }
 
+func (s *NodeStat) IsAllowed(role string) bool {
+	if len(s.RolesAllowed) > 0 {
+		for _, r := range s.RolesAllowed {
+			if role == r {
+				return true
+			}
+		}
+		return false
+	} else if len(s.RolesDenied) > 0 {
+		allow := true
+		for _, r := range s.RolesDenied {
+			if role == r {
+				allow = false
+			}
+		}
+		return allow
+	}
+	return true
+}
+
 type NodesStat struct {
 	lazymap.LazyMap[[]NodeStat]
 	kcl         *K8SClient
