@@ -63,9 +63,10 @@ func splitPieces(buf []byte) []Hash {
 
 type ResourceMap struct {
 	lazymap.LazyMap[*Resource]
-	ts            TorrentStoreGetter
-	m2t           Magnet2TorrentGetter
-	magnetTimeout time.Duration
+	ts                  TorrentStoreGetter
+	m2t                 Magnet2TorrentGetter
+	magnetTimeout       time.Duration
+	torrentStoreTimeout time.Duration
 }
 
 type TorrentStoreGetter interface {
@@ -81,13 +82,12 @@ func NewResourceMap(ts TorrentStoreGetter, m2t Magnet2TorrentGetter) *ResourceMa
 		LazyMap: lazymap.New[*Resource](&lazymap.Config{
 			Concurrency: 100,
 			Expire:      600 * time.Second,
-			// ErrorExpire: 30 * time.Second,
 			Capacity:    1000,
-			StoreErrors: false,
 		}),
-		ts:            ts,
-		m2t:           m2t,
-		magnetTimeout: 3 * time.Minute,
+		ts:                  ts,
+		m2t:                 m2t,
+		torrentStoreTimeout: 10 * time.Second,
+		magnetTimeout:       3 * time.Minute,
 	}
 }
 
@@ -112,9 +112,13 @@ func (s *ResourceMap) parseTorrent(b []byte) (*Resource, error) {
 	if err != nil {
 		return nil, err
 	}
+	name := i.Name
+	if i.NameUtf8 != "" {
+		name = i.NameUtf8
+	}
 	r := &Resource{
 		ID:   mi.HashInfoBytes().HexString(),
-		Name: i.Name,
+		Name: name,
 		Size: i.PieceLength * int64(i.NumPieces()),
 		Type: ResourceTypeTorrent,
 	}
@@ -123,8 +127,12 @@ func (s *ResourceMap) parseTorrent(b []byte) (*Resource, error) {
 	offset := int64(0)
 	for _, f := range i.UpvertedFiles() {
 		start, end := offset/i.PieceLength, (offset+f.Length)/i.PieceLength
+		path := f.Path
+		if len(f.PathUtf8) > 0 {
+			path = f.PathUtf8
+		}
 		r.Files = append(r.Files, &File{
-			Path:   append([]string{i.Name}, f.Path...),
+			Path:   append([]string{name}, path...),
 			Size:   f.Length,
 			Pieces: pieces[start : end+1],
 		})
@@ -162,7 +170,9 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 		return nil, err
 	}
 	found := true
-	_, err = ts.Touch(ctx, &tsp.TouchRequest{InfoHash: r.ID})
+	touchCtx, touchCancel := context.WithTimeout(ctx, s.torrentStoreTimeout)
+	defer touchCancel()
+	_, err = ts.Touch(touchCtx, &tsp.TouchRequest{InfoHash: r.ID})
 	if err != nil {
 		if st, ok := status.FromError(err); ok {
 			switch st.Code() {
@@ -181,7 +191,9 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 		if r.Type == ResourceTypeTorrent {
 			return r, nil
 		} else {
-			rep, err := ts.Pull(ctx, &tsp.PullRequest{InfoHash: r.ID})
+			pullCtx, pullCancel := context.WithTimeout(ctx, s.torrentStoreTimeout)
+			defer pullCancel()
+			rep, err := ts.Pull(pullCtx, &tsp.PullRequest{InfoHash: r.ID})
 			if err != nil {
 				return nil, err
 			}
@@ -192,7 +204,9 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 	case ResourceTypeSha1:
 		return nil, errors.Errorf("not found sha1=%v", r.ID)
 	case ResourceTypeTorrent:
-		_, err := ts.Push(ctx, &tsp.PushRequest{Torrent: b})
+		pushCtx, pushCancel := context.WithTimeout(ctx, s.torrentStoreTimeout)
+		defer pushCancel()
+		_, err := ts.Push(pushCtx, &tsp.PushRequest{Torrent: b})
 		if err != nil {
 			return nil, err
 		}
@@ -203,10 +217,10 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 		if err != nil {
 			return nil, err
 		}
-		mctx, cancel := context.WithTimeout(ctx, s.magnetTimeout)
-		defer cancel()
-		rep, err := m2t.Magnet2Torrent(mctx, &m2tp.Magnet2TorrentRequest{Magnet: string(b)})
-		if err != nil && mctx.Err() != nil {
+		magnetCtx, magnetCancel := context.WithTimeout(ctx, s.magnetTimeout)
+		defer magnetCancel()
+		rep, err := m2t.Magnet2Torrent(magnetCtx, &m2tp.Magnet2TorrentRequest{Magnet: string(b)})
+		if err != nil && magnetCtx.Err() != nil {
 			return nil, errors.Wrap(err, "magnet timeout")
 		} else if err != nil {
 			return nil, err

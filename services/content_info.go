@@ -11,10 +11,10 @@ const (
 )
 
 var formats = map[MediaFormat][]string{
-	Video:    []string{"avi", "mkv", "mp4", "webm", "m4v", "ts", "vob"},
-	Audio:    []string{"mp3", "wav", "ogg", "flac", "m4a"},
-	Image:    []string{"png", "gif", "jpg", "jpeg"},
-	Subtitle: []string{"srt", "vtt"},
+	Video:    {"avi", "mkv", "mp4", "webm", "m4v", "ts", "vob"},
+	Audio:    {"mp3", "wav", "ogg", "flac", "m4a"},
+	Image:    {"png", "gif", "jpg", "jpeg"},
+	Subtitle: {"srt", "vtt"},
 }
 
 var transcodeExt = []string{"avi", "mkv", "m4v", "ts", "vob", "flac", "m4a"}

@@ -17,8 +17,7 @@ type CacheMap struct {
 func NewCacheMap(cl *http.Client) *CacheMap {
 	return &CacheMap{
 		LazyMap: lazymap.New[bool](&lazymap.Config{
-			Expire:      30 * time.Second,
-			ErrorExpire: 5 * time.Second,
+			Expire: 30 * time.Second,
 		}),
 		cl: cl,
 	}
@@ -26,6 +25,8 @@ func NewCacheMap(cl *http.Client) *CacheMap {
 
 func (s *CacheMap) Get(ctx context.Context, u *MyURL) (bool, error) {
 	return s.LazyMap.Get(u.Path, func() (bool, error) {
+		cacheCtx, cacheCancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cacheCancel()
 		i, err := url.Parse(u.String())
 		if err != nil {
 			return false, err
@@ -33,7 +34,7 @@ func (s *CacheMap) Get(ctx context.Context, u *MyURL) (bool, error) {
 		q := u.Query()
 		q.Set("done", "true")
 		i.RawQuery = q.Encode()
-		req, err := http.NewRequestWithContext(ctx, "GET", i.String(), nil)
+		req, err := http.NewRequestWithContext(cacheCtx, "GET", i.String(), nil)
 		if err != nil {
 			return false, err
 		}

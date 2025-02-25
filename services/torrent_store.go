@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"google.golang.org/grpc/credentials/insecure"
 	"sync"
 
 	"github.com/urfave/cli"
@@ -53,7 +54,7 @@ func NewTorrentStore(c *cli.Context) *TorrentStore {
 func (s *TorrentStore) get() (ts.TorrentStoreClient, error) {
 	log.Info("initializing TorrentStoreClient")
 	addr := fmt.Sprintf("%s:%d", s.host, s.port)
-	conn, err := grpc.Dial(addr, grpc.WithInsecure())
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	s.conn = conn
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to dial torrent store addr=%v", addr)

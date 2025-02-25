@@ -148,7 +148,7 @@ func (s *List) buildRootItem(path []string, size int64) ListItem {
 }
 
 func (s *List) buildList(r *Resource, args *ListGetArgs) ListResponse {
-	items := []ListItem{}
+	var items []ListItem
 	var count int
 	var size int64
 	var dirs [][]string
@@ -157,7 +157,7 @@ func (s *List) buildList(r *Resource, args *ListGetArgs) ListResponse {
 			continue
 		}
 		if len(f.Path) > len(args.Path) {
-			p := []string{}
+			var p []string
 			for _, v := range f.Path[len(args.Path) : len(f.Path)-1] {
 				p = append(p, v)
 				found := false
@@ -173,7 +173,7 @@ func (s *List) buildList(r *Resource, args *ListGetArgs) ListResponse {
 					if count-1 < args.Offset || (args.Limit != 0 && count > args.Offset+args.Limit) {
 						continue
 					}
-					fp := []string{}
+					var fp []string
 					fp = append(fp, args.Path...)
 					fp = append(fp, p...)
 					fps := "/" + strings.Join(fp, "/")
@@ -265,7 +265,7 @@ func (s *List) buildTree(r *Resource, args *ListGetArgs) ListResponse {
 	count := len(items)
 
 	if args.Offset > 0 || (args.Limit != 0 && args.Offset+args.Limit < len(items)) {
-		limitted := []ListItem{}
+		var limitted []ListItem
 		for n, i := range items {
 			if n >= args.Offset+args.Limit {
 				break

@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"google.golang.org/grpc/credentials/insecure"
 	"sync"
 
 	"github.com/urfave/cli"
@@ -53,7 +54,7 @@ func NewMagnet2Torrent(c *cli.Context) *Magnet2Torrent {
 func (s *Magnet2Torrent) get() (m2t.Magnet2TorrentClient, error) {
 	log.Info("initializing Magnet2Torrent")
 	addr := fmt.Sprintf("%s:%d", s.host, s.port)
-	conn, err := grpc.Dial(addr, grpc.WithInsecure())
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	s.conn = conn
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to dial torrent store addr=%v", addr)
@@ -70,6 +71,6 @@ func (s *Magnet2Torrent) Get() (m2t.Magnet2TorrentClient, error) {
 
 func (s *Magnet2Torrent) Close() {
 	if s.conn != nil {
-		s.conn.Close()
+		_ = s.conn.Close()
 	}
 }

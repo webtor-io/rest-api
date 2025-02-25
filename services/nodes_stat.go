@@ -68,7 +68,6 @@ func NewNodesStat(c *cli.Context, kcl *K8SClient) *NodesStat {
 		LazyMap: lazymap.New[[]NodeStat](&lazymap.Config{
 			Concurrency: 1,
 			Expire:      30 * time.Second,
-			ErrorExpire: 15 * time.Second,
 			Capacity:    1,
 		}),
 		kcl:         kcl,
@@ -78,11 +77,13 @@ func NewNodesStat(c *cli.Context, kcl *K8SClient) *NodesStat {
 
 func (s *NodesStat) Get(ctx context.Context) ([]NodeStat, error) {
 	return s.LazyMap.Get("", func() ([]NodeStat, error) {
+		ctx2, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
 		cl, err := s.kcl.Get()
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get k8s client")
 		}
-		nodes, err := cl.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+		nodes, err := cl.CoreV1().Nodes().List(ctx2, metav1.ListOptions{})
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get nodes")
 		}

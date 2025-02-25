@@ -179,7 +179,7 @@ func (s *Web) getList(g *gin.Context) {
 		g.Error(err)
 		return
 	}
-	id := g.Param("resource_id")
+	id := strings.ToLower(g.Param("resource_id"))
 	r, err := s.rm.Get(g.Request.Context(), []byte(id))
 	if err != nil {
 		g.Error(err)
@@ -303,6 +303,6 @@ func (s *Web) Close() {
 		log.Info("Web closed")
 	}()
 	if s.ln != nil {
-		s.ln.Close()
+		_ = s.ln.Close()
 	}
 }
