@@ -213,12 +213,12 @@ func (s *Web) getExport(g *gin.Context) {
 		g.Error(err)
 		return
 	}
-	contentID := g.Param("content_id")
+	contentID := strings.ToLower(g.Param("content_id"))
 	if !sha1R.Match([]byte(contentID)) {
 		g.Error(errors.Errorf("failed to parse content id %v", contentID))
 		return
 	}
-	resourceID := g.Param("resource_id")
+	resourceID := strings.ToLower(g.Param("resource_id"))
 	r, err := s.rm.Get(g.Request.Context(), []byte(resourceID))
 	if err != nil {
 		g.Error(err)
