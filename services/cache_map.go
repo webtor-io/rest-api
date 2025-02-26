@@ -23,9 +23,9 @@ func NewCacheMap(cl *http.Client) *CacheMap {
 	}
 }
 
-func (s *CacheMap) Get(ctx context.Context, u *MyURL) (bool, error) {
+func (s *CacheMap) Get(u *MyURL) (bool, error) {
 	return s.LazyMap.Get(u.Path, func() (bool, error) {
-		cacheCtx, cacheCancel := context.WithTimeout(ctx, 10*time.Second)
+		cacheCtx, cacheCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cacheCancel()
 		i, err := url.Parse(u.String())
 		if err != nil {

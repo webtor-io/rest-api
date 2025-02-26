@@ -75,9 +75,9 @@ func NewNodesStat(c *cli.Context, kcl *K8SClient) *NodesStat {
 	}
 }
 
-func (s *NodesStat) Get(ctx context.Context) ([]NodeStat, error) {
+func (s *NodesStat) Get() ([]NodeStat, error) {
 	return s.LazyMap.Get("", func() ([]NodeStat, error) {
-		ctx2, cancel := context.WithTimeout(ctx, 10*time.Second)
+		ctx2, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		cl, err := s.kcl.Get()
 		if err != nil {

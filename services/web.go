@@ -243,7 +243,7 @@ func (s *Web) getExport(g *gin.Context) {
 		g.Error(errors.Errorf("content with id %v not found", contentID))
 		return
 	}
-	res, err := s.e.Get(g.Request.Context(), r, item, args, g)
+	res, err := s.e.Get(r, item, args, g)
 	if err != nil {
 		g.Error(err)
 		return

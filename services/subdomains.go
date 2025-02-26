@@ -1,7 +1,6 @@
 package services
 
 import (
-	"context"
 	"math"
 	"sort"
 	"strconv"
@@ -114,8 +113,8 @@ func (s *Subdomains) updateScoreByInfoHash(stats []NodeStatWithScore, infohash s
 	return stats, nil
 }
 
-func (s *Subdomains) getScoredStats(ctx context.Context, infohash string, pool string, role string) ([]NodeStatWithScore, error) {
-	stats, err := s.nsp.Get(ctx)
+func (s *Subdomains) getScoredStats(infohash string, pool string, role string) ([]NodeStatWithScore, error) {
+	stats, err := s.nsp.Get()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get nodes stat")
 	}
@@ -165,8 +164,8 @@ func (s *Subdomains) getScoredStatsByPoolAndRole(sc []NodeStatWithScore, infohas
 	return sc, nil
 }
 
-func (s *Subdomains) Get(ctx context.Context, infohash string, pool string, role string) ([]string, error) {
-	stats, err := s.getScoredStats(ctx, infohash, pool, role)
+func (s *Subdomains) Get(infohash string, pool string, role string) ([]string, error) {
+	stats, err := s.getScoredStats(infohash, pool, role)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get sorted nodes stat")
 	}

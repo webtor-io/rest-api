@@ -1,7 +1,6 @@
 package services
 
 import (
-	"context"
 	"crypto/sha1"
 	"fmt"
 	"github.com/dgrijalva/jwt-go"
@@ -54,7 +53,7 @@ func NewURLBuilder(c *cli.Context, sd *Subdomains, cm *CacheMap) *URLBuilder {
 	}
 }
 
-func (s *URLBuilder) Build(ctx context.Context, r *Resource, i *ListItem, g ParamGetter, et ExportType) (*MyURL, error) {
+func (s *URLBuilder) Build(r *Resource, i *ListItem, g ParamGetter, et ExportType) (*MyURL, error) {
 	bubc := BaseURLBuilder{
 		sd:                s.sd,
 		cm:                s.cm,
@@ -74,29 +73,29 @@ func (s *URLBuilder) Build(ctx context.Context, r *Resource, i *ListItem, g Para
 		dub := &DownloadURLBuilder{
 			BaseURLBuilder: bubc,
 		}
-		return dub.Build(ctx)
+		return dub.Build()
 	case ExportTypeStream:
 		sub := &StreamURLBuilder{
 			BaseURLBuilder: bubc,
 		}
-		return sub.Build(ctx)
+		return sub.Build()
 	case ExportTypeTorrentStat:
 		sub := &TorrentStatURLBuilder{
 			BaseURLBuilder: bubc,
 		}
-		return sub.Build(ctx)
+		return sub.Build()
 	case ExportTypeSubtitles:
 		sub := &SubtitlesURLBuilder{
 			BaseURLBuilder: bubc,
 		}
-		return sub.Build(ctx)
+		return sub.Build()
 	case ExportTypeMediaProbe:
 		sub := &MediaProbeURLBuilder{
 			StreamURLBuilder: StreamURLBuilder{
 				BaseURLBuilder: bubc,
 			},
 		}
-		return sub.Build(ctx)
+		return sub.Build()
 	}
 	return nil, nil
 }
@@ -238,7 +237,7 @@ func (s *BaseURLBuilder) getRequestID() string {
 	return ""
 }
 
-func (s *BaseURLBuilder) BuildBaseURL(ctx context.Context, i *MyURL) (u *MyURL, err error) {
+func (s *BaseURLBuilder) BuildBaseURL(i *MyURL) (u *MyURL, err error) {
 	u = i
 	u.Path = s.pathPrefix + s.r.ID + "/" + strings.Trim(s.i.PathStr, "/")
 	q := u.Query()
@@ -262,7 +261,7 @@ func (s *BaseURLBuilder) BuildBaseURL(ctx context.Context, i *MyURL) (u *MyURL, 
 		q.Add("request-id", requestID)
 	}
 	u.RawQuery = q.Encode()
-	cached, err := s.cm.Get(ctx, u)
+	cached, err := s.cm.Get(u)
 	if err != nil {
 		return nil, err
 	}
@@ -284,7 +283,7 @@ func (s *BaseURLBuilder) BuildScheme(i *MyURL) (u *MyURL, err error) {
 	return
 }
 
-func (s *BaseURLBuilder) BuildDomain(ctx context.Context, i *MyURL) (u *MyURL, err error) {
+func (s *BaseURLBuilder) BuildDomain(i *MyURL) (u *MyURL, err error) {
 	u = i
 	if s.domain == "" {
 		return u, nil
@@ -300,7 +299,7 @@ func (s *BaseURLBuilder) BuildDomain(ctx context.Context, i *MyURL) (u *MyURL, e
 		if err != nil {
 			return nil, err
 		}
-		subs, err := s.sd.Get(ctx, s.r.ID, pool, role)
+		subs, err := s.sd.Get(s.r.ID, pool, role)
 		if err != nil {
 			return nil, err
 		}
@@ -331,17 +330,17 @@ func (s *DownloadURLBuilder) BuildDownloadURL(i *MyURL) (u *MyURL, err error) {
 	return
 }
 
-func (s *DownloadURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
+func (s *DownloadURLBuilder) Build() (u *MyURL, err error) {
 	u = &MyURL{}
 	u, err = s.BuildScheme(u)
 	if err != nil {
 		return
 	}
-	u, err = s.BuildDomain(ctx, u)
+	u, err = s.BuildDomain(u)
 	if err != nil {
 		return
 	}
-	u, err = s.BuildBaseURL(ctx, u)
+	u, err = s.BuildBaseURL(u)
 	if err != nil {
 		return
 	}
@@ -352,32 +351,32 @@ func (s *DownloadURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 	return
 }
 
-func (s *StreamURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
+func (s *StreamURLBuilder) Build() (u *MyURL, err error) {
 	u = &MyURL{}
 	u, err = s.BuildScheme(u)
 	if err != nil {
 		return
 	}
-	u, err = s.BuildDomain(ctx, u)
+	u, err = s.BuildDomain(u)
 	if err != nil {
 		return
 	}
-	u, err = s.BuildBaseURL(ctx, u)
+	u, err = s.BuildBaseURL(u)
 	if err != nil {
 		return
 	}
-	u, err = s.BuildStreamURL(ctx, u, "/index.m3u8")
+	u, err = s.BuildStreamURL(u, "/index.m3u8")
 	if err != nil {
 		return
 	}
 	return
 }
 
-func (s *StreamURLBuilder) BuildTranscodeURL(ctx context.Context, i *MyURL, suffix string) (u *MyURL, err error) {
+func (s *StreamURLBuilder) BuildTranscodeURL(i *MyURL, suffix string) (u *MyURL, err error) {
 	u = i
 	u.Path += ServiceSeparator + string(ServiceTypeTranscode) + suffix
 	u.transcode = true
-	cached, err := s.cm.Get(ctx, u)
+	cached, err := s.cm.Get(u)
 	if err != nil {
 		return nil, err
 	}
@@ -391,10 +390,10 @@ func (s *StreamURLBuilder) BuildVODURL(i *MyURL, suffix string) (u *MyURL) {
 	return u
 }
 
-func (s *StreamURLBuilder) BuildVideoStreamURL(ctx context.Context, i *MyURL, suffix string) (u *MyURL, err error) {
+func (s *StreamURLBuilder) BuildVideoStreamURL(i *MyURL, suffix string) (u *MyURL, err error) {
 	u = i
 	if shouldTranscode(s.i.Ext) {
-		u, err = s.BuildTranscodeURL(ctx, i, suffix)
+		u, err = s.BuildTranscodeURL(i, suffix)
 		return
 	} else {
 		u = s.BuildVODURL(i, suffix)
@@ -402,10 +401,10 @@ func (s *StreamURLBuilder) BuildVideoStreamURL(ctx context.Context, i *MyURL, su
 	return
 }
 
-func (s *StreamURLBuilder) BuildAudioStreamURL(ctx context.Context, i *MyURL, suffix string) (u *MyURL, err error) {
+func (s *StreamURLBuilder) BuildAudioStreamURL(i *MyURL, suffix string) (u *MyURL, err error) {
 	u = i
 	if shouldTranscode(s.i.Ext) {
-		u, err = s.BuildTranscodeURL(ctx, i, suffix)
+		u, err = s.BuildTranscodeURL(i, suffix)
 		return
 	}
 	return
@@ -425,13 +424,13 @@ func (s *StreamURLBuilder) BuildSubtitleStreamURL(i *MyURL) (u *MyURL, err error
 	return
 }
 
-func (s *StreamURLBuilder) BuildStreamURL(ctx context.Context, i *MyURL, suffix string) (u *MyURL, err error) {
+func (s *StreamURLBuilder) BuildStreamURL(i *MyURL, suffix string) (u *MyURL, err error) {
 	u = i
 	switch s.i.MediaFormat {
 	case Video:
-		return s.BuildVideoStreamURL(ctx, u, suffix)
+		return s.BuildVideoStreamURL(u, suffix)
 	case Audio:
-		return s.BuildAudioStreamURL(ctx, u, suffix)
+		return s.BuildAudioStreamURL(u, suffix)
 	case Subtitle:
 		return s.BuildSubtitleStreamURL(u)
 	}
@@ -450,17 +449,17 @@ func (s *TorrentStatURLBuilder) BuildStatURL(i *MyURL) *MyURL {
 	return u
 }
 
-func (s *TorrentStatURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
+func (s *TorrentStatURLBuilder) Build() (u *MyURL, err error) {
 	u = &MyURL{}
 	u, err = s.BuildScheme(u)
 	if err != nil {
 		return
 	}
-	u, err = s.BuildDomain(ctx, u)
+	u, err = s.BuildDomain(u)
 	if err != nil {
 		return
 	}
-	u, err = s.BuildBaseURL(ctx, u)
+	u, err = s.BuildBaseURL(u)
 	if err != nil {
 		return
 	}
@@ -483,17 +482,17 @@ func (s *SubtitlesURLBuilder) BuildSubtitlesURL(i *MyURL) (u *MyURL) {
 	return u
 }
 
-func (s *SubtitlesURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
+func (s *SubtitlesURLBuilder) Build() (u *MyURL, err error) {
 	u = &MyURL{}
 	u, err = s.BuildScheme(u)
 	if err != nil {
 		return
 	}
-	u, err = s.BuildDomain(ctx, u)
+	u, err = s.BuildDomain(u)
 	if err != nil {
 		return
 	}
-	u, err = s.BuildBaseURL(ctx, u)
+	u, err = s.BuildBaseURL(u)
 	if err != nil {
 		return
 	}
@@ -501,21 +500,21 @@ func (s *SubtitlesURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
 	return
 }
 
-func (s *MediaProbeURLBuilder) Build(ctx context.Context) (u *MyURL, err error) {
+func (s *MediaProbeURLBuilder) Build() (u *MyURL, err error) {
 	u = &MyURL{}
 	u, err = s.BuildScheme(u)
 	if err != nil {
 		return
 	}
-	u, err = s.BuildDomain(ctx, u)
+	u, err = s.BuildDomain(u)
 	if err != nil {
 		return
 	}
-	u, err = s.BuildBaseURL(ctx, u)
+	u, err = s.BuildBaseURL(u)
 	if err != nil {
 		return
 	}
-	u, err = s.BuildStreamURL(ctx, u, "/index.json")
+	u, err = s.BuildStreamURL(u, "/index.json")
 	if err != nil {
 		return
 	}
