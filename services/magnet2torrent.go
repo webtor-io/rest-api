@@ -23,8 +23,9 @@ type Magnet2Torrent struct {
 }
 
 const (
-	magnet2torrentHostFlag = "magnet2torrent-host"
-	magnet2torrentPortFlag = "magnet2torrent-port"
+	magnet2torrentHostFlag   = "magnet2torrent-host"
+	magnet2torrentPortFlag   = "magnet2torrent-port"
+	magnet2torrentMaxMsgSize = 1024 * 1024 * 50
 )
 
 func RegisterMagnet2TorrentFlags(f []cli.Flag) []cli.Flag {
@@ -54,7 +55,13 @@ func NewMagnet2Torrent(c *cli.Context) *Magnet2Torrent {
 func (s *Magnet2Torrent) get() (m2t.Magnet2TorrentClient, error) {
 	log.Info("initializing Magnet2Torrent")
 	addr := fmt.Sprintf("%s:%d", s.host, s.port)
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDefaultCallOptions(
+			grpc.MaxCallRecvMsgSize(magnet2torrentMaxMsgSize),
+			grpc.MaxCallSendMsgSize(magnet2torrentMaxMsgSize),
+		),
+	)
 	s.conn = conn
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to dial torrent store addr=%v", addr)
