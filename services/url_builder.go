@@ -3,10 +3,11 @@ package services
 import (
 	"crypto/sha1"
 	"fmt"
-	"github.com/dgrijalva/jwt-go"
-	"github.com/pkg/errors"
 	"net/url"
 	"strings"
+
+	"github.com/dgrijalva/jwt-go"
+	"github.com/pkg/errors"
 
 	"github.com/urfave/cli"
 )
@@ -37,6 +38,7 @@ type URLBuilder struct {
 	useSubdomains     bool
 	subdomainsK8SPool string
 	pathPrefix        string
+	premiumDomain     string
 }
 
 func NewURLBuilder(c *cli.Context, sd *Subdomains, cm *CacheMap) *URLBuilder {
@@ -44,6 +46,7 @@ func NewURLBuilder(c *cli.Context, sd *Subdomains, cm *CacheMap) *URLBuilder {
 		sd:                sd,
 		cm:                cm,
 		domain:            c.String(exportDomainFlag),
+		premiumDomain:     c.String(exportPremiumDomainFlag),
 		apiKey:            c.String(exportApiKeyFlag),
 		apiSecret:         c.String(exportApiSecretFlag),
 		apiRole:           c.String(exportApiRoleFlag),
@@ -61,6 +64,7 @@ func (s *URLBuilder) Build(r *Resource, i *ListItem, g ParamGetter, et ExportTyp
 		i:                 i,
 		g:                 g,
 		domain:            s.domain,
+		premiumDomain:     s.premiumDomain,
 		apiKey:            s.apiKey,
 		apiSecret:         s.apiSecret,
 		apiRole:           s.apiRole,
@@ -113,6 +117,7 @@ type BaseURLBuilder struct {
 	subdomainsK8SPool string
 	useSubdomains     bool
 	pathPrefix        string
+	premiumDomain     string
 }
 
 type DownloadURLBuilder struct {
@@ -269,13 +274,30 @@ func (s *BaseURLBuilder) BuildBaseURL(i *MyURL) (u *MyURL, err error) {
 	return
 }
 
+func (s *BaseURLBuilder) getBaseDomain() string {
+	if s.domain == "" {
+		return ""
+	}
+	if s.premiumDomain != "" {
+		role, err := s.getRole()
+		if err != nil {
+			return ""
+		}
+		if role != "free" {
+			return s.premiumDomain
+		}
+	}
+	return s.domain
+}
+
 func (s *BaseURLBuilder) BuildScheme(i *MyURL) (u *MyURL, err error) {
 	u = i
-	if s.domain == "" {
+	domain := s.getBaseDomain()
+	if domain == "" {
 		u.Scheme = "http"
 		return
 	}
-	du, err := url.Parse(s.domain)
+	du, err := url.Parse(domain)
 	if err != nil {
 		return nil, err
 	}
@@ -285,10 +307,11 @@ func (s *BaseURLBuilder) BuildScheme(i *MyURL) (u *MyURL, err error) {
 
 func (s *BaseURLBuilder) BuildDomain(i *MyURL) (u *MyURL, err error) {
 	u = i
-	if s.domain == "" {
+	baseDomain := s.getBaseDomain()
+	if baseDomain == "" {
 		return u, nil
 	}
-	du, err := url.Parse(s.domain)
+	du, err := url.Parse(baseDomain)
 	if err != nil {
 		return nil, err
 	}

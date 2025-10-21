@@ -9,6 +9,7 @@ import (
 
 const (
 	exportDomainFlag            = "export-domain"
+	exportPremiumDomainFlag     = "export-premium-domain"
 	exportUseSubdomainsFlag     = "export-use-subdomains"
 	exportSubdomainsK8SPoolFlag = "export-subdomains-k8s-pool"
 	exportApiKeyFlag            = "export-api-key"
@@ -46,6 +47,12 @@ func RegisterExportFlags(f []cli.Flag) []cli.Flag {
 			Usage:  "export domain",
 			Value:  "",
 			EnvVar: "EXPORT_DOMAIN",
+		},
+		cli.StringFlag{
+			Name:   exportPremiumDomainFlag,
+			Usage:  "export premium domain",
+			Value:  "",
+			EnvVar: "EXPORT_PREMIUM_DOMAIN",
 		},
 		cli.StringFlag{
 			Name:   exportApiKeyFlag,
