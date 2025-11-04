@@ -1,11 +1,12 @@
 package main
 
 import (
+	"net/http"
+
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	cs "github.com/webtor-io/common-services"
 	s "github.com/webtor-io/rest-api/services"
-	"net/http"
 )
 
 func makeServeCMD() cli.Command {
@@ -56,7 +57,7 @@ func serve(c *cli.Context) error {
 	httpCl := http.DefaultClient
 
 	// Setting CacheMap
-	cm := s.NewCacheMap(httpCl)
+	cm := s.NewCacheMap(c, httpCl)
 
 	// Setting Magnet2Torrent
 	m2t := s.NewMagnet2Torrent(c)
