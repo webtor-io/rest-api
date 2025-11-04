@@ -18,7 +18,7 @@ const (
 	torrentHTTPProxyPortFlag        = "torrent-http-proxy-port"
 )
 
-func RegisterFlags(f []cli.Flag) []cli.Flag {
+func RegisterCacheMapFlags(f []cli.Flag) []cli.Flag {
 	return append(f,
 		cli.BoolFlag{
 			Name:   useInternalTorrentHTTPProxyFlag,

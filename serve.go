@@ -29,6 +29,7 @@ func configureServe(c *cli.Command) {
 	c.Flags = s.RegisterExportFlags(c.Flags)
 	c.Flags = s.RegisterNodesStatFlags(c.Flags)
 	c.Flags = s.RegisterVideoInfoServiceFlags(c.Flags)
+	c.Flags = s.RegisterCacheMapFlags(c.Flags)
 }
 
 func serve(c *cli.Context) error {
