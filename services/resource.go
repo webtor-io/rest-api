@@ -62,7 +62,7 @@ func splitPieces(buf []byte) []Hash {
 }
 
 type ResourceMap struct {
-	lazymap.LazyMap[*Resource]
+	*lazymap.LazyMap[*Resource]
 	ts                  TorrentStoreGetter
 	m2t                 Magnet2TorrentGetter
 	magnetTimeout       time.Duration

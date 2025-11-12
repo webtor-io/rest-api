@@ -40,7 +40,7 @@ func RegisterCacheMapFlags(f []cli.Flag) []cli.Flag {
 }
 
 type CacheMap struct {
-	lazymap.LazyMap[bool]
+	*lazymap.LazyMap[bool]
 	cl                          *http.Client
 	useInternalTorrentHTTPProxy bool
 	torrentHTTPProxyHost        string

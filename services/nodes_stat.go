@@ -58,7 +58,7 @@ func (s *NodeStat) IsAllowed(role string) bool {
 }
 
 type NodesStat struct {
-	lazymap.LazyMap[[]NodeStat]
+	*lazymap.LazyMap[[]NodeStat]
 	kcl         *K8SClient
 	labelPrefix string
 }

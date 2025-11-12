@@ -14,7 +14,7 @@ require (
 	github.com/swaggo/swag v1.16.6
 	github.com/urfave/cli v1.22.17
 	github.com/webtor-io/common-services v0.0.0-20250112153432-554128b56bd5
-	github.com/webtor-io/lazymap v0.0.0-20251018143542-5573a1d3ca7d
+	github.com/webtor-io/lazymap v0.0.0-20251112155450-24fcf0ad4b5d
 	github.com/webtor-io/magnet2torrent v0.0.0-20220312143110-bc1a7e4bcbba
 	github.com/webtor-io/torrent-store v1.0.0
 	golang.org/x/text v0.30.0
