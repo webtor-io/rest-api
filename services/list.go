@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"mime"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -20,11 +21,19 @@ const (
 
 type List struct{}
 
+type ListSortType string
+
+const (
+	ListSortTypeName ListSortType = "name"
+	ListSortTypeSize ListSortType = "size"
+)
+
 type ListGetArgs struct {
 	Limit  int
 	Offset int
 	Output ListOutputType
 	Path   []string
+	Sort   ListSortType
 }
 
 type ParamGetter interface {
@@ -37,6 +46,7 @@ func NewListGetArgs() *ListGetArgs {
 	return &ListGetArgs{
 		Output: ListOutputTypeList,
 		Path:   []string{},
+		Sort:   ListSortTypeName,
 	}
 }
 
@@ -85,6 +95,16 @@ func ListGetArgsFromParams(g ParamGetter) (*ListGetArgs, error) {
 		res.Path = []string{}
 	} else {
 		res.Path = strings.Split(path, "/")
+	}
+	switch g.Query("sort") {
+	case "name":
+		res.Sort = ListSortTypeName
+	case "size":
+		res.Sort = ListSortTypeSize
+	case "":
+		res.Sort = ListSortTypeName
+	default:
+		return nil, errors.Errorf("failed to parse sort, should be name or size")
 	}
 	return res, nil
 }
@@ -149,7 +169,6 @@ func (s *List) buildRootItem(path []string, size int64) ListItem {
 
 func (s *List) buildList(r *Resource, args *ListGetArgs) ListResponse {
 	var items []ListItem
-	var count int
 	var size int64
 	var dirs [][]string
 	for _, f := range r.Files {
@@ -169,10 +188,6 @@ func (s *List) buildList(r *Resource, args *ListGetArgs) ListResponse {
 				}
 				if !found {
 					dirs = append(dirs, p)
-					count++
-					if count-1 < args.Offset || (args.Limit != 0 && count > args.Offset+args.Limit) {
-						continue
-					}
 					var fp []string
 					fp = append(fp, args.Path...)
 					fp = append(fp, p...)
@@ -188,12 +203,27 @@ func (s *List) buildList(r *Resource, args *ListGetArgs) ListResponse {
 				}
 			}
 		}
-		count++
 		size += f.Size
-		if count-1 < args.Offset || (args.Limit != 0 && count > args.Offset+args.Limit) {
-			continue
-		}
 		items = append(items, s.buildFile(f))
+	}
+
+	// Sort items with folders first, then by selected criteria
+	s.sortItems(items, args.Sort)
+
+	count := len(items)
+
+	// Apply pagination after sorting
+	if args.Offset > 0 || (args.Limit != 0 && args.Offset+args.Limit < len(items)) {
+		var limitted []ListItem
+		for n, i := range items {
+			if n >= args.Offset+args.Limit {
+				break
+			}
+			if n >= args.Offset {
+				limitted = append(limitted, i)
+			}
+		}
+		items = limitted
 	}
 
 	return ListResponse{
@@ -201,6 +231,32 @@ func (s *List) buildList(r *Resource, args *ListGetArgs) ListResponse {
 		Items:    items,
 		Count:    count,
 	}
+}
+
+func (s *List) sortItems(items []ListItem, sortType ListSortType) {
+	sort.SliceStable(items, func(i, j int) bool {
+		// Folders always come first
+		if items[i].Type == ListTypeDirectory && items[j].Type == ListTypeFile {
+			return true
+		}
+		if items[i].Type == ListTypeFile && items[j].Type == ListTypeDirectory {
+			return false
+		}
+
+		// Both are same type, apply sorting criteria
+		switch sortType {
+		case ListSortTypeSize:
+			if items[i].Size != items[j].Size {
+				return items[i].Size > items[j].Size
+			}
+			// If sizes are equal, fall back to alphabetical
+			return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
+		case ListSortTypeName:
+			fallthrough
+		default:
+			return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
+		}
+	})
 }
 
 func (s *List) buildFile(f *File) ListItem {
@@ -261,6 +317,9 @@ func (s *List) buildTree(r *Resource, args *ListGetArgs) ListResponse {
 		items = append(items, *dir)
 		dir = nil
 	}
+
+	// Sort items with folders first, then by selected criteria
+	s.sortItems(items, args.Sort)
 
 	count := len(items)
 

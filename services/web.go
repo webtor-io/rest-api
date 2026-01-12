@@ -159,11 +159,11 @@ func (s *Web) getTorrent(g *gin.Context) {
 // @Description Lists files and directories of specific resource.
 // @Description All ids in response can be used for export.
 // @Param resource_id path  string true  "resource_id" example("08ada5a7a6183aae1e09d831df6748d566095a10")
-
 // @Param path        query string false "path"
 // @Param limit       query int    false "limit"
 // @Param offset      query int    false "offset"
 // @Param output      query string false "output" Enums(list, tree)
+// @Param sort        query string false "sort" Enums(name, size) default(name)
 // @Schemes
 // @Tags   list
 // @Accept */*

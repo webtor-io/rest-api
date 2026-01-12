@@ -260,6 +260,7 @@ const docTemplate = `{
         },
         "/resource/{resource_id}/list": {
             "get": {
+                "description": "Lists files and directories of specific resource.\nAll ids in response can be used for export.",
                 "consumes": [
                     "*/*"
                 ],
@@ -269,7 +270,16 @@ const docTemplate = `{
                 "tags": [
                     "list"
                 ],
+                "summary": "Lists resource",
                 "parameters": [
+                    {
+                        "type": "string",
+                        "example": "\"08ada5a7a6183aae1e09d831df6748d566095a10\"",
+                        "description": "resource_id",
+                        "name": "resource_id",
+                        "in": "path",
+                        "required": true
+                    },
                     {
                         "type": "string",
                         "description": "path",
@@ -296,6 +306,17 @@ const docTemplate = `{
                         "type": "string",
                         "description": "output",
                         "name": "output",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "name",
+                            "size"
+                        ],
+                        "type": "string",
+                        "default": "name",
+                        "description": "sort",
+                        "name": "sort",
                         "in": "query"
                     }
                 ],

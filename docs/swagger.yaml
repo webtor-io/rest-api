@@ -347,7 +347,16 @@ paths:
     get:
       consumes:
       - '*/*'
+      description: |-
+        Lists files and directories of specific resource.
+        All ids in response can be used for export.
       parameters:
+      - description: resource_id
+        example: '"08ada5a7a6183aae1e09d831df6748d566095a10"'
+        in: path
+        name: resource_id
+        required: true
+        type: string
       - description: path
         in: query
         name: path
@@ -366,6 +375,14 @@ paths:
         - tree
         in: query
         name: output
+        type: string
+      - default: name
+        description: sort
+        enum:
+        - name
+        - size
+        in: query
+        name: sort
         type: string
       produces:
       - application/json
@@ -386,6 +403,7 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/services.ErrorResponse'
+      summary: Lists resource
       tags:
       - list
 swagger: "2.0"
