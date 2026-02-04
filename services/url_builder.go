@@ -71,6 +71,7 @@ func (s *URLBuilder) Build(r *Resource, i *ListItem, g ParamGetter, et ExportTyp
 		useSubdomains:     s.useSubdomains,
 		subdomainsK8SPool: s.subdomainsK8SPool,
 		pathPrefix:        s.pathPrefix,
+		usePremiumDomain:  g.Query("use-premium-domain") != "false",
 	}
 	switch et {
 	case ExportTypeDownload:
@@ -118,6 +119,7 @@ type BaseURLBuilder struct {
 	useSubdomains     bool
 	pathPrefix        string
 	premiumDomain     string
+	usePremiumDomain  bool
 }
 
 type DownloadURLBuilder struct {
@@ -283,7 +285,7 @@ func (s *BaseURLBuilder) getBaseDomain() string {
 		if err != nil {
 			return ""
 		}
-		if role != "free" {
+		if role != "free" && s.usePremiumDomain {
 			return s.premiumDomain
 		}
 	}
