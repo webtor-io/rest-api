@@ -72,6 +72,25 @@ func TestList_sortItems_BySize(t *testing.T) {
 	assert.Equal(t, int64(100), items[3].Size)
 }
 
+func TestList_sortItems_None(t *testing.T) {
+	l := NewList()
+
+	items := []ListItem{
+		{Name: "file2.txt", Type: ListTypeFile, Size: 200},
+		{Name: "aFolder", Type: ListTypeDirectory, Size: 500},
+		{Name: "file1.txt", Type: ListTypeFile, Size: 100},
+		{Name: "bFolder", Type: ListTypeDirectory, Size: 300},
+	}
+
+	l.sortItems(items, ListSortTypeNone)
+
+	// Original order should be preserved — no sorting at all
+	assert.Equal(t, "file2.txt", items[0].Name)
+	assert.Equal(t, "aFolder", items[1].Name)
+	assert.Equal(t, "file1.txt", items[2].Name)
+	assert.Equal(t, "bFolder", items[3].Name)
+}
+
 func TestList_sortItems_SizeTieBreaker(t *testing.T) {
 	l := NewList()
 

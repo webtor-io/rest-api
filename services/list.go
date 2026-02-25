@@ -24,6 +24,7 @@ type List struct{}
 type ListSortType string
 
 const (
+	ListSortTypeNone ListSortType = ""
 	ListSortTypeName ListSortType = "name"
 	ListSortTypeSize ListSortType = "size"
 )
@@ -46,7 +47,7 @@ func NewListGetArgs() *ListGetArgs {
 	return &ListGetArgs{
 		Output: ListOutputTypeList,
 		Path:   []string{},
-		Sort:   ListSortTypeName,
+		Sort:   ListSortTypeNone,
 	}
 }
 
@@ -102,7 +103,7 @@ func ListGetArgsFromParams(g ParamGetter) (*ListGetArgs, error) {
 	case "size":
 		res.Sort = ListSortTypeSize
 	case "":
-		res.Sort = ListSortTypeName
+		res.Sort = ListSortTypeNone
 	default:
 		return nil, errors.Errorf("failed to parse sort, should be name or size")
 	}
@@ -234,6 +235,9 @@ func (s *List) buildList(r *Resource, args *ListGetArgs) ListResponse {
 }
 
 func (s *List) sortItems(items []ListItem, sortType ListSortType) {
+	if sortType == ListSortTypeNone {
+		return
+	}
 	sort.SliceStable(items, func(i, j int) bool {
 		// Folders always come first
 		if items[i].Type == ListTypeDirectory && items[j].Type == ListTypeFile {
