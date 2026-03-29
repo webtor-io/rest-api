@@ -38,15 +38,17 @@ type Web struct {
 	rm   *ResourceMap
 	c    *List
 	e    *Export
+	st   *SpeedTest
 }
 
-func NewWeb(c *cli.Context, rm *ResourceMap, co *List, ex *Export) *Web {
+func NewWeb(c *cli.Context, rm *ResourceMap, co *List, ex *Export, st *SpeedTest) *Web {
 	return &Web{
 		host: c.String(webHostFlag),
 		port: c.Int(webPortFlag),
 		rm:   rm,
 		c:    co,
 		e:    ex,
+		st:   st,
 	}
 }
 
@@ -290,11 +292,23 @@ func (s *Web) Serve() error {
 		rg.GET("/:resource_id/list", s.getList)
 		rg.GET("/:resource_id/export/:content_id", s.getExport)
 	}
+	if s.st != nil {
+		r.GET("/speedtest", s.getSpeedtest)
+	}
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	docs.SwaggerInfo.BasePath = "/"
 	log.Infof("serving Web at %v", addr)
 	return http.Serve(s.ln, r)
+}
+
+func (s *Web) getSpeedtest(g *gin.Context) {
+	u, err := s.st.GetURL(g)
+	if err != nil {
+		g.Error(err)
+		return
+	}
+	g.PureJSON(http.StatusOK, &SpeedtestResponse{URL: u})
 }
 
 func (s *Web) Close() {

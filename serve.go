@@ -119,8 +119,11 @@ func serve(c *cli.Context) error {
 	// Setting Export
 	ex := s.NewExport(exporters...)
 
+	// Setting SpeedTest
+	st := s.NewSpeedTest(c, ns)
+
 	// Setting Web
-	web := s.NewWeb(c, rm, li, ex)
+	web := s.NewWeb(c, rm, li, ex, st)
 	if web != nil {
 		services = append(services, web)
 		defer web.Close()
