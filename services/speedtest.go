@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	speedtestDefaultSize = 10 * 1024 * 1024 // 10MB
+	speedtestDefaultSize = 50 * 1024 * 1024 // 50MB
 )
 
 type SpeedTest struct {
