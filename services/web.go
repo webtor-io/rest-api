@@ -303,12 +303,12 @@ func (s *Web) Serve() error {
 }
 
 func (s *Web) getSpeedtest(g *gin.Context) {
-	u, err := s.st.GetURL(g)
+	urls, err := s.st.GetURLs(g)
 	if err != nil {
 		g.Error(err)
 		return
 	}
-	g.PureJSON(http.StatusOK, &SpeedtestResponse{URL: u})
+	g.PureJSON(http.StatusOK, &SpeedtestResponse{URLs: urls})
 }
 
 func (s *Web) Close() {

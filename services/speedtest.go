@@ -26,8 +26,13 @@ type SpeedTest struct {
 	subdomainsK8SPool string
 }
 
+type SpeedtestURL struct {
+	URL  string `json:"url"`
+	Type string `json:"type"`
+}
+
 type SpeedtestResponse struct {
-	URL string `json:"url"`
+	URLs []SpeedtestURL `json:"urls"`
 }
 
 func NewSpeedTest(c *cli.Context, nsp *NodesStat) *SpeedTest {
@@ -131,10 +136,10 @@ func (s *SpeedTest) getRole(g ParamGetter) string {
 	return s.apiRole
 }
 
-func (s *SpeedTest) GetURL(g ParamGetter) (string, error) {
-	du, err := url.Parse(s.domain)
+func (s *SpeedTest) buildURL(domainStr string, g ParamGetter) (string, error) {
+	du, err := url.Parse(domainStr)
 	if err != nil {
-		return "", errors.Wrap(err, "failed to parse export domain")
+		return "", errors.Wrap(err, "failed to parse domain")
 	}
 
 	role := s.getRole(g)
@@ -174,4 +179,22 @@ func (s *SpeedTest) GetURL(g ParamGetter) (string, error) {
 	}
 
 	return u.String(), nil
+}
+
+func (s *SpeedTest) GetURLs(g ParamGetter) ([]SpeedtestURL, error) {
+	stdURL, err := s.buildURL(s.domain, g)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to build standard URL")
+	}
+	result := []SpeedtestURL{
+		{URL: stdURL, Type: "standard"},
+	}
+	if s.premiumDomain != "" {
+		premURL, err := s.buildURL(s.premiumDomain, g)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to build premium URL")
+		}
+		result = append(result, SpeedtestURL{URL: premURL, Type: "premium"})
+	}
+	return result, nil
 }
