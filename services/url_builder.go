@@ -85,8 +85,15 @@ func (s *URLBuilder) Build(r *Resource, i *ListItem, g ParamGetter, et ExportTyp
 		}
 		return sub.Build()
 	case ExportTypeTorrentStat:
+		// Stats are an SSE stream consumed by the warmup watchdog in
+		// real time; routing via the premium edge adds an extra hop
+		// (with chunk buffering on most CDNs) that delays the first
+		// statupdate event by 10-30s on cold-started seeders. Force
+		// the direct domain regardless of role.
+		statBubc := bubc
+		statBubc.usePremiumDomain = false
 		sub := &TorrentStatURLBuilder{
-			BaseURLBuilder: bubc,
+			BaseURLBuilder: statBubc,
 		}
 		return sub.Build()
 	case ExportTypeSubtitles:
