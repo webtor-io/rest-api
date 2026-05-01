@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -196,7 +197,10 @@ func (s *Web) getList(g *gin.Context) {
 }
 
 // @Summary Exports resource content
-// @Description Provides url for exporting resource content.
+// @Description Provides url for exporting resource content. content_id is
+// @Description either the SHA1 of the file's path (returned by /list) or
+// @Description the file's index in the torrent's natural file order
+// @Description (matches the fileIdx convention used by Stremio addons).
 // @Param output      query string false "output"      Enums(download, stream, torrent_client_stat, subtitles, media_probe)
 // @Param resource_id path  string true  "resource_id" example("08ada5a7a6183aae1e09d831df6748d566095a10")
 // @Param content_id  path  string true  "content_id"  example("ca2453df3e7691c28934eebed5a253ee0aabd29f")
@@ -216,31 +220,44 @@ func (s *Web) getExport(g *gin.Context) {
 		return
 	}
 	contentID := strings.ToLower(g.Param("content_id"))
-	if !sha1R.Match([]byte(contentID)) {
-		g.Error(errors.Errorf("failed to parse content id %v", contentID))
-		return
-	}
 	resourceID := strings.ToLower(g.Param("resource_id"))
 	r, err := s.rm.Get(g.Request.Context(), []byte(resourceID))
 	if err != nil {
 		g.Error(err)
 		return
 	}
-	cr, err := s.c.Get(r, NewListGetArgs())
-	if err != nil {
-		g.Error(err)
+
+	var item *ListItem
+	if idx, ierr := strconv.Atoi(contentID); ierr == nil {
+		// content_id is a file index into the torrent's natural file order.
+		// Lets clients (Stremio addon) skip the /list round-trip when they
+		// already know which file in the torrent they want.
+		if idx < 0 || idx >= len(r.Files) {
+			g.Error(errors.Errorf("file idx %d out of range (resource has %d files)", idx, len(r.Files)))
+			return
+		}
+		it := s.c.buildFile(r.Files[idx])
+		item = &it
+	} else if sha1R.Match([]byte(contentID)) {
+		cr, lerr := s.c.Get(r, NewListGetArgs())
+		if lerr != nil {
+			g.Error(lerr)
+			return
+		}
+		for _, i := range cr.Items {
+			if i.ID == contentID {
+				item = &i
+				break
+			}
+		}
+		if item == nil && cr.ID == contentID {
+			item = &cr.ListItem
+		}
+	} else {
+		g.Error(errors.Errorf("failed to parse content id %v", contentID))
 		return
 	}
-	var item *ListItem
-	for _, i := range cr.Items {
-		if i.ID == contentID {
-			item = &i
-			break
-		}
-	}
-	if item == nil && cr.ID == contentID {
-		item = &cr.ListItem
-	}
+
 	if item == nil {
 		g.Error(errors.Errorf("content with id %v not found", contentID))
 		return
