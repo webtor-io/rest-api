@@ -187,32 +187,47 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 			return nil, err
 		}
 	}
-	if found {
-		if r.Type == ResourceTypeTorrent {
-			return r, nil
-		} else {
+	switch r.Type {
+	case ResourceTypeSha1:
+		if !found {
+			return nil, errors.Errorf("not found sha1=%v", r.ID)
+		}
+		pullCtx, pullCancel := context.WithTimeout(ctx, s.torrentStoreTimeout)
+		defer pullCancel()
+		rep, err := ts.Pull(pullCtx, &tsp.PullRequest{InfoHash: r.ID})
+		if err != nil {
+			return nil, err
+		}
+		return s.parseTorrent(rep.GetTorrent())
+
+	case ResourceTypeTorrent:
+		// Always push: torrent-store merges announces/url-list with whatever
+		// already exists, so re-uploading a .torrent with fresher trackers
+		// extends the swarm instead of being silently dropped.
+		pushCtx, pushCancel := context.WithTimeout(ctx, s.torrentStoreTimeout)
+		defer pushCancel()
+		if _, err := ts.Push(pushCtx, &tsp.PushRequest{Torrent: b}); err != nil {
+			return nil, err
+		}
+		return r, nil
+
+	case ResourceTypeMagnet:
+		if found {
 			pullCtx, pullCancel := context.WithTimeout(ctx, s.torrentStoreTimeout)
 			defer pullCancel()
 			rep, err := ts.Pull(pullCtx, &tsp.PullRequest{InfoHash: r.ID})
 			if err != nil {
 				return nil, err
 			}
+			// Even when the torrent is already cached, push any tr= trackers
+			// from the incoming magnet so torrent-store can merge them in.
+			if extra := magnetTrackerTorrent(b, rep.GetTorrent()); extra != nil {
+				pushCtx, pushCancel := context.WithTimeout(ctx, s.torrentStoreTimeout)
+				defer pushCancel()
+				_, _ = ts.Push(pushCtx, &tsp.PushRequest{Torrent: extra})
+			}
 			return s.parseTorrent(rep.GetTorrent())
 		}
-	}
-	switch r.Type {
-	case ResourceTypeSha1:
-		return nil, errors.Errorf("not found sha1=%v", r.ID)
-	case ResourceTypeTorrent:
-		pushCtx, pushCancel := context.WithTimeout(ctx, s.torrentStoreTimeout)
-		defer pushCancel()
-		_, err := ts.Push(pushCtx, &tsp.PushRequest{Torrent: b})
-		if err != nil {
-			return nil, err
-		}
-		return r, nil
-
-	case ResourceTypeMagnet:
 		m2t, err := s.m2t.Get()
 		if err != nil {
 			return nil, err
@@ -225,13 +240,45 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 		} else if err != nil {
 			return nil, err
 		}
-		_, err = ts.Push(ctx, &tsp.PushRequest{Torrent: rep.GetTorrent()})
+		// Inject the magnet's tr= trackers before pushing — m2t strips them
+		// during DHT metadata exchange, leaving the .torrent trackerless.
+		payload := rep.GetTorrent()
+		if augmented := magnetTrackerTorrent(b, payload); augmented != nil {
+			payload = augmented
+		}
+		_, err = ts.Push(ctx, &tsp.PushRequest{Torrent: payload})
 		if err != nil {
 			return nil, err
 		}
-		return s.parseTorrent(rep.GetTorrent())
+		return s.parseTorrent(payload)
 	}
 	return nil, nil
+}
+
+// magnetTrackerTorrent builds a synthetic torrent that carries the
+// magnet's tr= trackers but reuses base's info dict (so the infohash
+// stays identical). Returns nil if the magnet has no trackers or parsing
+// fails — torrent-store does the actual merge.
+func magnetTrackerTorrent(magnetURI []byte, base []byte) []byte {
+	ma, err := metainfo.ParseMagnetUri(string(magnetURI))
+	if err != nil || len(ma.Trackers) == 0 {
+		return nil
+	}
+	mi, err := metainfo.Load(bytes.NewReader(base))
+	if err != nil {
+		return nil
+	}
+	tiers := make(metainfo.AnnounceList, 0, len(ma.Trackers))
+	for _, t := range ma.Trackers {
+		tiers = append(tiers, []string{t})
+	}
+	mi.AnnounceList = tiers
+	mi.Announce = ma.Trackers[0]
+	var buf bytes.Buffer
+	if err := mi.Write(&buf); err != nil {
+		return nil
+	}
+	return buf.Bytes()
 }
 
 func (s *ResourceMap) Get(ctx context.Context, b []byte) (*Resource, error) {

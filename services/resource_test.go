@@ -146,6 +146,9 @@ func TestResourceMap_torrentFound(t *testing.T) {
 	tsclm, _ := rm.ts.Get()
 	tsclmm := tsclm.(*TorrentStoreClientMock)
 	tsclmm.On("Touch", mock.Anything, mock.Anything, mock.Anything).Return(nil, nil)
+	// Push is always called: torrent-store merges announces with the
+	// existing copy, so we never silently drop the upload.
+	tsclmm.On("Push", mock.Anything, mock.Anything, mock.Anything).Return(nil, nil)
 	r, err := rm.Get(context.Background(), loadSintel(t))
 	assertSintel(t, r)
 	assert.Nil(err)
@@ -174,6 +177,9 @@ func TestResourceMap_magnetFound(t *testing.T) {
 	tsclmm.On("Pull", mock.Anything, mock.Anything, mock.Anything).Return(&tsp.PullReply{
 		Torrent: loadSintel(t),
 	}, nil)
+	// sintelMagnet carries tr= params; resource.go forwards them as a
+	// synthetic-trackers torrent so torrent-store can merge them in.
+	tsclmm.On("Push", mock.Anything, mock.Anything, mock.Anything).Return(nil, nil)
 	r, err := rm.Get(context.Background(), []byte(sintelMagnet))
 	assertSintel(t, r)
 	assert.Nil(err)
@@ -191,6 +197,7 @@ func TestResourceMap_magnetNotFound(t *testing.T) {
 	m2tclmm.On("Magnet2Torrent", mock.Anything, mock.Anything, mock.Anything).Return(&m2tp.Magnet2TorrentReply{
 		Torrent: loadSintel(t),
 	}, nil)
+	tsclmm.On("Push", mock.Anything, mock.Anything, mock.Anything).Return(nil, nil)
 	r, err := rm.Get(context.Background(), []byte(sintelMagnet))
 	assertSintel(t, r)
 	assert.Nil(err)
