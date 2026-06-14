@@ -180,7 +180,7 @@
         },
         "/resource/{resource_id}/export/{content_id}": {
             "get": {
-                "description": "Provides url for exporting resource content.",
+                "description": "Provides url for exporting resource content. content_id is\neither the SHA1 of the file's path (returned by /list) or\nthe file's index in the torrent's natural file order\n(matches the fileIdx convention used by Stremio addons).",
                 "consumes": [
                     "*/*"
                 ],
@@ -586,11 +586,23 @@
         "services.ResourceResponse": {
             "type": "object",
             "properties": {
+                "file": {
+                    "description": "File is the single file of a single-file torrent (nil when MultiFile).\nLets clients skip /list for the common single-file case.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/services.ListItem"
+                        }
+                    ]
+                },
                 "id": {
                     "type": "string"
                 },
                 "magnet_uri": {
                     "type": "string"
+                },
+                "multi_file": {
+                    "description": "MultiFile is false for single-file-mode torrents (one file sitting at\nthe torrent root). Clients can render such a torrent straight away\nwithout a /list round-trip.",
+                    "type": "boolean"
                 },
                 "name": {
                     "type": "string"

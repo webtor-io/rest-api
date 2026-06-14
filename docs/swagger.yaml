@@ -164,10 +164,22 @@ definitions:
     - Unknown
   services.ResourceResponse:
     properties:
+      file:
+        allOf:
+        - $ref: '#/definitions/services.ListItem'
+        description: |-
+          File is the single file of a single-file torrent (nil when MultiFile).
+          Lets clients skip /list for the common single-file case.
       id:
         type: string
       magnet_uri:
         type: string
+      multi_file:
+        description: |-
+          MultiFile is false for single-file-mode torrents (one file sitting at
+          the torrent root). Clients can render such a torrent straight away
+          without a /list round-trip.
+        type: boolean
       name:
         type: string
     type: object
@@ -297,7 +309,11 @@ paths:
     get:
       consumes:
       - '*/*'
-      description: Provides url for exporting resource content.
+      description: |-
+        Provides url for exporting resource content. content_id is
+        either the SHA1 of the file's path (returned by /list) or
+        the file's index in the torrent's natural file order
+        (matches the fileIdx convention used by Stremio addons).
       parameters:
       - description: output
         enum:
