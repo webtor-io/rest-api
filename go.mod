@@ -16,7 +16,7 @@ require (
 	github.com/webtor-io/common-services v0.0.0-20250112153432-554128b56bd5
 	github.com/webtor-io/lazymap v0.0.0-20251112155450-24fcf0ad4b5d
 	github.com/webtor-io/magnet2torrent v0.0.0-20220312143110-bc1a7e4bcbba
-	github.com/webtor-io/torrent-store v1.0.0
+	github.com/webtor-io/torrent-store v1.0.1-0.20260614135143-50f5d91eee6b
 	golang.org/x/text v0.33.0
 	google.golang.org/grpc v1.77.0
 	k8s.io/api v0.34.1

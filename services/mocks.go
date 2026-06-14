@@ -31,6 +31,11 @@ func (s *TorrentStoreClientMock) Touch(ctx context.Context, in *tsp.TouchRequest
 	r, _ := args.Get(0).(*tsp.TouchReply)
 	return r, args.Error(1)
 }
+func (s *TorrentStoreClientMock) Files(ctx context.Context, in *tsp.FilesRequest, opts ...grpc.CallOption) (*tsp.FilesReply, error) {
+	args := s.Called(ctx, in, opts)
+	r, _ := args.Get(0).(*tsp.FilesReply)
+	return r, args.Error(1)
+}
 
 type TorrentStoreMock struct {
 	m *TorrentStoreClientMock

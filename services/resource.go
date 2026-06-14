@@ -63,6 +63,7 @@ func splitPieces(buf []byte) []Hash {
 
 type ResourceMap struct {
 	*lazymap.LazyMap[*Resource]
+	manifests           *lazymap.LazyMap[*Resource]
 	ts                  TorrentStoreGetter
 	m2t                 Magnet2TorrentGetter
 	magnetTimeout       time.Duration
@@ -78,12 +79,18 @@ type Magnet2TorrentGetter interface {
 }
 
 func NewResourceMap(ts TorrentStoreGetter, m2t Magnet2TorrentGetter) *ResourceMap {
+	manifests := lazymap.New[*Resource](&lazymap.Config{
+		Concurrency: 100,
+		Expire:      600 * time.Second,
+		Capacity:    1000,
+	})
 	return &ResourceMap{
 		LazyMap: lazymap.New[*Resource](&lazymap.Config{
 			Concurrency: 100,
 			Expire:      600 * time.Second,
 			Capacity:    1000,
 		}),
+		manifests:           manifests,
 		ts:                  ts,
 		m2t:                 m2t,
 		torrentStoreTimeout: 10 * time.Second,
@@ -289,4 +296,56 @@ func (s *ResourceMap) Get(ctx context.Context, b []byte) (*Resource, error) {
 	return s.LazyMap.Get(r.ID, func() (*Resource, error) {
 		return s.get(ctx, r, b)
 	})
+}
+
+// GetManifest returns a lightweight Resource (ID + Name + Files, no piece
+// hashes / torrent bytes / magnet URI) for listing and export. It is fed by
+// the torrent-store Files RPC, which serves a precomputed, multi-level-cached
+// manifest — so listing a torrent with thousands of files no longer transfers
+// and parses the full .torrent on every request. infohash must be a hex
+// SHA1; magnet/torrent inputs are not accepted here (they only reach the
+// store-and-resolve POST path, which uses Get).
+func (s *ResourceMap) GetManifest(ctx context.Context, infohash string) (*Resource, error) {
+	return s.manifests.Get(infohash, func() (*Resource, error) {
+		return s.getManifest(ctx, infohash)
+	})
+}
+
+func (s *ResourceMap) getManifest(ctx context.Context, infohash string) (*Resource, error) {
+	ts, err := s.ts.Get()
+	if err != nil {
+		return nil, err
+	}
+	fctx, cancel := context.WithTimeout(ctx, s.torrentStoreTimeout)
+	defer cancel()
+	rep, err := ts.Files(fctx, &tsp.FilesRequest{InfoHash: infohash})
+	if err != nil {
+		if st, ok := status.FromError(err); ok {
+			switch st.Code() {
+			case gcodes.Unimplemented:
+				// torrent-store predates the Files RPC — fall back to the full
+				// pull+parse path so rest-api stays deployable independently of
+				// the store's rollout/rollback.
+				return s.Get(ctx, []byte(infohash))
+			case gcodes.PermissionDenied:
+				// "forbidden" so the web error handler maps to 403, matching get().
+				return nil, errors.Wrap(err, "forbidden")
+			case gcodes.NotFound:
+				return nil, errors.Errorf("not found infoHash=%v", infohash)
+			}
+		}
+		return nil, err
+	}
+	r := &Resource{
+		ID:   infohash,
+		Name: rep.GetName(),
+		Type: ResourceTypeSha1,
+	}
+	for _, f := range rep.GetFiles() {
+		r.Files = append(r.Files, &File{
+			Path: f.GetPath(),
+			Size: f.GetLength(),
+		})
+	}
+	return r, nil
 }

@@ -183,7 +183,7 @@ func (s *Web) getList(g *gin.Context) {
 		return
 	}
 	id := strings.ToLower(g.Param("resource_id"))
-	r, err := s.rm.Get(g.Request.Context(), []byte(id))
+	r, err := s.rm.GetManifest(g.Request.Context(), id)
 	if err != nil {
 		g.Error(err)
 		return
