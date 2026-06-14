@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -98,11 +99,13 @@ func (s *Web) postResource(g *gin.Context) {
 		g.Error(err)
 		return
 	}
-	g.PureJSON(http.StatusOK, &ResourceResponse{
+	rr := &ResourceResponse{
 		ID:        r.ID,
 		Name:      r.Name,
 		MagnetURI: r.MagnetURI,
-	})
+	}
+	s.fillResourceStructure(rr, r)
+	g.PureJSON(http.StatusOK, rr)
 }
 
 // @Summary Returns resource
@@ -123,16 +126,47 @@ func (s *Web) getResource(g *gin.Context) {
 		s.getTorrent(g)
 		return
 	}
-	r, err := s.rm.Get(g.Request.Context(), []byte(id))
+	// Serve from the lightweight manifest (Files RPC) instead of pulling and
+	// parsing the whole .torrent: this endpoint only needs id/name/structure.
+	// The magnet is synthesized from the infohash — the torrent is already in
+	// the store, so a trackerless magnet resolves fine for webtor.
+	r, err := s.rm.GetManifest(g.Request.Context(), strings.ToLower(id))
 	if err != nil {
 		g.Error(err)
 		return
 	}
-	g.PureJSON(http.StatusOK, &ResourceResponse{
+	rr := &ResourceResponse{
 		ID:        r.ID,
 		Name:      r.Name,
-		MagnetURI: r.MagnetURI,
-	})
+		MagnetURI: magnetFromInfoHash(r.ID, r.Name),
+	}
+	s.fillResourceStructure(rr, r)
+	g.PureJSON(http.StatusOK, rr)
+}
+
+// fillResourceStructure sets MultiFile and, for single-file-mode torrents
+// (one file at the torrent root), the single File item — so clients can
+// render that common case without a /list round-trip.
+func (s *Web) fillResourceStructure(rr *ResourceResponse, r *Resource) {
+	if len(r.Files) == 1 && len(r.Files[0].Path) == 1 {
+		it := s.c.buildFile(r.Files[0])
+		rr.File = &it
+		return
+	}
+	rr.MultiFile = true
+}
+
+// magnetFromInfoHash builds a minimal magnet URI from an infohash (and
+// optional display name). The announce list is intentionally omitted —
+// webtor resolves by infohash against the store, so listing/embed paths
+// don't need trackers. xt stays first so the prefix matches the configured
+// demo magnet (demo detection relies on a prefix match).
+func magnetFromInfoHash(id, name string) string {
+	m := "magnet:?xt=urn:btih:" + id
+	if name != "" {
+		m += "&dn=" + url.QueryEscape(name)
+	}
+	return m
 }
 
 // @Summary Returns torrent for resource

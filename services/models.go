@@ -4,6 +4,13 @@ type ResourceResponse struct {
 	ID        string `json:"id"`
 	Name      string `json:"name,omitempty"`
 	MagnetURI string `json:"magnet_uri,omitempty"`
+	// MultiFile is false for single-file-mode torrents (one file sitting at
+	// the torrent root). Clients can render such a torrent straight away
+	// without a /list round-trip.
+	MultiFile bool `json:"multi_file"`
+	// File is the single file of a single-file torrent (nil when MultiFile).
+	// Lets clients skip /list for the common single-file case.
+	File *ListItem `json:"file,omitempty"`
 }
 
 type ErrorResponse struct {

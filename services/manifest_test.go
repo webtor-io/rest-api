@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -66,6 +67,55 @@ func TestGetManifestForbidden(t *testing.T) {
 	assert.NotNil(err)
 	// "forbidden" maps to 403 in the web error handler.
 	assert.Contains(err.Error(), "forbidden")
+}
+
+func TestMagnetFromInfoHash(t *testing.T) {
+	assert := assert.New(t)
+	assert.Equal("magnet:?xt=urn:btih:abc", magnetFromInfoHash("abc", ""))
+	assert.Equal("magnet:?xt=urn:btih:abc&dn=My+File", magnetFromInfoHash("abc", "My File"))
+	// Synthesized demo magnet must keep the demo flag as a prefix so web-ui
+	// demo detection (HasPrefix) keeps working.
+	demoFlag := "magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10"
+	assert.True(strings.HasPrefix(magnetFromInfoHash("08ada5a7a6183aae1e09d831df6748d566095a10", "Sintel"), demoFlag))
+}
+
+func TestFillResourceStructureSingleFile(t *testing.T) {
+	assert := assert.New(t)
+	w := &Web{c: NewList()}
+	r := &Resource{ID: "h", Name: "movie.mkv", Files: []*File{{Path: []string{"movie.mkv"}, Size: 100}}}
+	rr := &ResourceResponse{ID: r.ID, Name: r.Name}
+	w.fillResourceStructure(rr, r)
+	assert.False(rr.MultiFile)
+	if assert.NotNil(rr.File) {
+		assert.Equal("/movie.mkv", rr.File.PathStr)
+		assert.Equal(ListTypeFile, rr.File.Type)
+	}
+}
+
+func TestFillResourceStructureMultiFile(t *testing.T) {
+	assert := assert.New(t)
+	w := &Web{c: NewList()}
+	r := &Resource{ID: "h", Name: "show", Files: []*File{
+		{Path: []string{"show", "e01.mkv"}, Size: 100},
+		{Path: []string{"show", "e02.mkv"}, Size: 200},
+	}}
+	rr := &ResourceResponse{}
+	w.fillResourceStructure(rr, r)
+	assert.True(rr.MultiFile)
+	assert.Nil(rr.File)
+}
+
+// A torrent with a single file that still sits inside a folder (multi-file
+// mode with one entry) must be treated as multi-file, since the file is not
+// at the root and web-ui can't address it from the name alone.
+func TestFillResourceStructureSingleFileWrapped(t *testing.T) {
+	assert := assert.New(t)
+	w := &Web{c: NewList()}
+	r := &Resource{ID: "h", Name: "wrap", Files: []*File{{Path: []string{"wrap", "only.mkv"}, Size: 100}}}
+	rr := &ResourceResponse{}
+	w.fillResourceStructure(rr, r)
+	assert.True(rr.MultiFile)
+	assert.Nil(rr.File)
 }
 
 func TestGetManifestUnimplementedFallsBackToPull(t *testing.T) {
