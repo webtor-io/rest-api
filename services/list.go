@@ -130,19 +130,6 @@ func pathBeginsWith(source []string, start []string) bool {
 	return check
 }
 
-// https://stackoverflow.com/a/15312097
-func testEq(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
 func (s *List) buildDirSize(r *Resource, prefix []string) int64 {
 	var size int64
 	for _, f := range r.Files {
@@ -171,7 +158,13 @@ func (s *List) buildRootItem(path []string, size int64) ListItem {
 func (s *List) buildList(r *Resource, args *ListGetArgs) ListResponse {
 	var items []ListItem
 	var size int64
-	var dirs [][]string
+	// seen tracks already-emitted directory prefixes by their joined path.
+	// Was a [][]string scanned linearly with testEq for every path component
+	// of every file — O(files * depth * dirs), quadratic in directory count
+	// and a memory/CPU spike on torrents with thousands of nested dirs. A
+	// string-keyed set makes the dedup O(1) per check with identical output
+	// (dirs are still emitted in first-seen order).
+	seen := map[string]struct{}{}
 	for _, f := range r.Files {
 		if !pathBeginsWith(f.Path, args.Path) {
 			continue
@@ -180,15 +173,9 @@ func (s *List) buildList(r *Resource, args *ListGetArgs) ListResponse {
 			var p []string
 			for _, v := range f.Path[len(args.Path) : len(f.Path)-1] {
 				p = append(p, v)
-				found := false
-				for _, d := range dirs {
-					if testEq(p, d) {
-						found = true
-						break
-					}
-				}
-				if !found {
-					dirs = append(dirs, p)
+				key := strings.Join(p, "/")
+				if _, ok := seen[key]; !ok {
+					seen[key] = struct{}{}
 					var fp []string
 					fp = append(fp, args.Path...)
 					fp = append(fp, p...)
