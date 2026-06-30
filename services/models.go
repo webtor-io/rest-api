@@ -34,6 +34,12 @@ type ListItem struct {
 	MediaFormat MediaFormat `json:"media_format,omitempty"`
 	MimeType    string      `json:"mime_type,omitempty"`
 	Ext         string      `json:"ext,omitempty"`
+	// Index is the file's position in the torrent's natural file order
+	// (r.Files), i.e. the content_id accepted by /resource/<hash>/export/<idx>.
+	// Valid only for Type == file items; directory items leave it zero. Lets
+	// clients address the file directly without re-deriving the index from
+	// the sorted/paginated list order.
+	Index int `json:"index"`
 }
 
 type ListResponse struct {

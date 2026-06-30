@@ -149,7 +149,7 @@ func (s *Web) getResource(g *gin.Context) {
 // render that common case without a /list round-trip.
 func (s *Web) fillResourceStructure(rr *ResourceResponse, r *Resource) {
 	if len(r.Files) == 1 && len(r.Files[0].Path) == 1 {
-		it := s.c.buildFile(r.Files[0])
+		it := s.c.buildFile(r.Files[0], 0)
 		rr.File = &it
 		return
 	}
@@ -270,7 +270,7 @@ func (s *Web) getExport(g *gin.Context) {
 			g.Error(errors.Errorf("file idx %d out of range (resource has %d files)", idx, len(r.Files)))
 			return
 		}
-		it := s.c.buildFile(r.Files[idx])
+		it := s.c.buildFile(r.Files[idx], idx)
 		item = &it
 	} else if sha1R.Match([]byte(contentID)) {
 		cr, lerr := s.c.Get(r, NewListGetArgs())

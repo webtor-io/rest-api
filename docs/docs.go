@@ -505,6 +505,10 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "index": {
+                    "description": "Index is the file's position in the torrent's natural file order\n(r.Files), i.e. the content_id accepted by /resource/\u003chash\u003e/export/\u003cidx\u003e.\nValid only for Type == file items; directory items leave it zero. Lets\nclients address the file directly without re-deriving the index from\nthe sorted/paginated list order.",
+                    "type": "integer"
+                },
                 "media_format": {
                     "$ref": "#/definitions/services.MediaFormat"
                 },
@@ -533,6 +537,10 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "string"
+                },
+                "index": {
+                    "description": "Index is the file's position in the torrent's natural file order\n(r.Files), i.e. the content_id accepted by /resource/\u003chash\u003e/export/\u003cidx\u003e.\nValid only for Type == file items; directory items leave it zero. Lets\nclients address the file directly without re-deriving the index from\nthe sorted/paginated list order.",
+                    "type": "integer"
                 },
                 "items": {
                     "type": "array",

@@ -165,7 +165,7 @@ func (s *List) buildList(r *Resource, args *ListGetArgs) ListResponse {
 	// string-keyed set makes the dedup O(1) per check with identical output
 	// (dirs are still emitted in first-seen order).
 	seen := map[string]struct{}{}
-	for _, f := range r.Files {
+	for i, f := range r.Files {
 		if !pathBeginsWith(f.Path, args.Path) {
 			continue
 		}
@@ -192,7 +192,7 @@ func (s *List) buildList(r *Resource, args *ListGetArgs) ListResponse {
 			}
 		}
 		size += f.Size
-		items = append(items, s.buildFile(f))
+		items = append(items, s.buildFile(f, i))
 	}
 
 	// Sort items with folders first, then by selected criteria
@@ -250,7 +250,7 @@ func (s *List) sortItems(items []ListItem, sortType ListSortType) {
 	})
 }
 
-func (s *List) buildFile(f *File) ListItem {
+func (s *List) buildFile(f *File, idx int) ListItem {
 	fps := "/" + strings.Join(f.Path, "/")
 	name := f.Path[len(f.Path)-1]
 	ext := strings.ToLower(strings.TrimLeft(filepath.Ext(name), "."))
@@ -262,6 +262,7 @@ func (s *List) buildFile(f *File) ListItem {
 		Path:    f.Path,
 		Type:    ListTypeFile,
 		Ext:     ext,
+		Index:   idx,
 	}
 	mf := getMediaFormatByExt(ext)
 	if mf != Unknown {
@@ -275,7 +276,7 @@ func (s *List) buildTree(r *Resource, args *ListGetArgs) ListResponse {
 	items := []ListItem{}
 	var size int64
 	var dir *ListItem
-	for _, f := range r.Files {
+	for i, f := range r.Files {
 		if !pathBeginsWith(f.Path, args.Path) {
 			continue
 		}
@@ -285,7 +286,7 @@ func (s *List) buildTree(r *Resource, args *ListGetArgs) ListResponse {
 				items = append(items, *dir)
 				dir = nil
 			}
-			items = append(items, s.buildFile(f))
+			items = append(items, s.buildFile(f, i))
 		} else {
 			fps := "/" + strings.Join(f.Path[0:len(args.Path)+1], "/")
 			if dir != nil && dir.PathStr != fps {
