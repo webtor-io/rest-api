@@ -186,6 +186,9 @@ definitions:
         description: |-
           File is the single file of a single-file torrent (nil when MultiFile).
           Lets clients skip /list for the common single-file case.
+      files_count:
+        description: FilesCount is the number of files in the torrent.
+        type: integer
       id:
         type: string
       magnet_uri:
@@ -198,6 +201,12 @@ definitions:
         type: boolean
       name:
         type: string
+      size:
+        description: |-
+          Size is the torrent's total size in bytes (sum of all files). Lets
+          clients read the size without paginating /list — a real win on torrents
+          with tens of thousands of files.
+        type: integer
     type: object
 info:
   contact:

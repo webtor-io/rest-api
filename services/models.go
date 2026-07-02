@@ -11,6 +11,12 @@ type ResourceResponse struct {
 	// File is the single file of a single-file torrent (nil when MultiFile).
 	// Lets clients skip /list for the common single-file case.
 	File *ListItem `json:"file,omitempty"`
+	// Size is the torrent's total size in bytes (sum of all files). Lets
+	// clients read the size without paginating /list — a real win on torrents
+	// with tens of thousands of files.
+	Size int64 `json:"size"`
+	// FilesCount is the number of files in the torrent.
+	FilesCount int `json:"files_count"`
 }
 
 type ErrorResponse struct {

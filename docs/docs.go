@@ -610,6 +610,10 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "files_count": {
+                    "description": "FilesCount is the number of files in the torrent.",
+                    "type": "integer"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -622,6 +626,10 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "size": {
+                    "description": "Size is the torrent's total size in bytes (sum of all files). Lets\nclients read the size without paginating /list — a real win on torrents\nwith tens of thousands of files.",
+                    "type": "integer"
                 }
             }
         }

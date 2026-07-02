@@ -86,6 +86,8 @@ func TestFillResourceStructureSingleFile(t *testing.T) {
 	rr := &ResourceResponse{ID: r.ID, Name: r.Name}
 	w.fillResourceStructure(rr, r)
 	assert.False(rr.MultiFile)
+	assert.Equal(int64(100), rr.Size)
+	assert.Equal(1, rr.FilesCount)
 	if assert.NotNil(rr.File) {
 		assert.Equal("/movie.mkv", rr.File.PathStr)
 		assert.Equal(ListTypeFile, rr.File.Type)
@@ -103,6 +105,8 @@ func TestFillResourceStructureMultiFile(t *testing.T) {
 	w.fillResourceStructure(rr, r)
 	assert.True(rr.MultiFile)
 	assert.Nil(rr.File)
+	assert.Equal(int64(300), rr.Size) // 100 + 200, no /list pagination needed
+	assert.Equal(2, rr.FilesCount)
 }
 
 // A torrent with a single file that still sits inside a folder (multi-file

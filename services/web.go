@@ -148,6 +148,10 @@ func (s *Web) getResource(g *gin.Context) {
 // (one file at the torrent root), the single File item — so clients can
 // render that common case without a /list round-trip.
 func (s *Web) fillResourceStructure(rr *ResourceResponse, r *Resource) {
+	rr.FilesCount = len(r.Files)
+	for i := range r.Files {
+		rr.Size += r.Files[i].Size
+	}
 	if len(r.Files) == 1 && len(r.Files[0].Path) == 1 {
 		it := s.c.buildFile(r.Files[0], 0)
 		rr.File = &it
