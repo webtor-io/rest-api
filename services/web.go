@@ -239,7 +239,8 @@ func (s *Web) getList(g *gin.Context) {
 // @Description either the SHA1 of the file's path (returned by /list) or
 // @Description the file's index in the torrent's natural file order
 // @Description (matches the fileIdx convention used by Stremio addons).
-// @Param output      query string false "output"      Enums(download, stream, torrent_client_stat, subtitles, media_probe)
+// @Param output         query string false "output"         Enums(download, stream, torrent_client_stat, subtitles, media_probe)
+// @Param archive-format query string false "archive format for directory downloads" Enums(zip, tar) default(zip)
 // @Param resource_id path  string true  "resource_id" example("08ada5a7a6183aae1e09d831df6748d566095a10")
 // @Param content_id  path  string true  "content_id"  example("ca2453df3e7691c28934eebed5a253ee0aabd29f")
 // @Schemes

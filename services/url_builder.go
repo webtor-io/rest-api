@@ -353,7 +353,13 @@ func (s *DownloadURLBuilder) BuildDownloadURL(i *MyURL) (u *MyURL, err error) {
 	u = i
 	l := s.GetLastName()
 	if s.i.Type == ListTypeDirectory {
-		l += ".zip"
+		// The extension picks the archive format inside torrent-archiver;
+		// zip stays the default so existing API consumers are unaffected.
+		if s.g.Query("archive-format") == "tar" {
+			l += ".tar"
+		} else {
+			l += ".zip"
+		}
 		u.Path += ServiceSeparator + string(ServiceTypeArchive) + "/" + l
 	}
 	q := u.Query()
