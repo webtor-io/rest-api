@@ -40,6 +40,7 @@ type ListGetArgs struct {
 type ParamGetter interface {
 	Param(s string) string
 	Query(s string) string
+	QueryArray(s string) []string
 	GetHeader(s string) string
 }
 

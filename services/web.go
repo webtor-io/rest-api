@@ -241,6 +241,7 @@ func (s *Web) getList(g *gin.Context) {
 // @Description (matches the fileIdx convention used by Stremio addons).
 // @Param output         query string false "output"         Enums(download, stream, torrent_client_stat, subtitles, media_probe)
 // @Param archive-format query string false "archive format for directory downloads" Enums(zip, tar) default(zip)
+// @Param paths query []string false "limit directory archive to selected file/folder paths (repeatable)"
 // @Param resource_id path  string true  "resource_id" example("08ada5a7a6183aae1e09d831df6748d566095a10")
 // @Param content_id  path  string true  "content_id"  example("ca2453df3e7691c28934eebed5a253ee0aabd29f")
 // @Schemes

@@ -4,6 +4,8 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"net/url"
+	"slices"
+	"sort"
 	"strings"
 
 	"github.com/dgrijalva/jwt-go"
@@ -349,9 +351,78 @@ func (s *BaseURLBuilder) GetLastName() string {
 	return p[len(p)-1]
 }
 
+// maxSelectedPaths mirrors the torrent-archiver limit for the ?paths=
+// selection; a checked folder covers its whole subtree with a single path,
+// so real selections stay far below it.
+const maxSelectedPaths = 1024
+
+// maxSelectedPathsEncodedLen bounds the percent-encoded byte length the
+// selection adds to the signed download URL. Edge proxies (ingress-nginx et
+// al.) reject request lines past ~8k, so a valid export must never mint a
+// URL the edge would then refuse; this is the effective selection bound.
+const maxSelectedPathsEncodedLen = 6000
+
+// getSelectedPaths validates the repeated ?paths= query values (a partial
+// archive selection) against the resource manifest and the exported item,
+// returning them sorted and normalized to torrent-rooted form without
+// leading slash — the shape torrent-archiver matches metainfo paths
+// against. Sorting makes the selection a set so the signed URL (and the
+// archiver ETag behind it) doesn't depend on client ordering.
+//
+// Error texts deliberately carry the errorHandler mapping substrings
+// ("failed to parse" → 400, "not found" → 404): these are client-input
+// errors and must not surface as 5xx.
+func (s *DownloadURLBuilder) getSelectedPaths() ([]string, error) {
+	values := s.g.QueryArray("paths")
+	if len(values) == 0 {
+		return nil, nil
+	}
+	if len(values) > maxSelectedPaths {
+		return nil, errors.Errorf("failed to parse paths, should be less than %d", maxSelectedPaths)
+	}
+	filePaths := make([]string, len(s.r.Files))
+	for n, f := range s.r.Files {
+		filePaths[n] = strings.Join(f.Path, "/")
+	}
+	base := strings.Trim(s.i.PathStr, "/")
+	var res []string
+	encodedLen := 0
+	for _, v := range values {
+		if strings.ContainsRune(v, 0) {
+			return nil, errors.Errorf("failed to parse paths, NUL byte in %q", v)
+		}
+		p := strings.Trim(v, "/")
+		if p == "" {
+			continue
+		}
+		if base != "" && p != base && !strings.HasPrefix(p, base+"/") {
+			return nil, errors.Errorf("failed to parse paths, %q is outside of exported directory %q", v, s.i.PathStr)
+		}
+		matched := false
+		prefix := p + "/"
+		for _, fp := range filePaths {
+			if fp == p || strings.HasPrefix(fp, prefix) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return nil, errors.Errorf("path %q not found in resource", v)
+		}
+		encodedLen += len(url.QueryEscape(p)) + len("&paths=")
+		if encodedLen > maxSelectedPathsEncodedLen {
+			return nil, errors.Errorf("failed to parse paths, encoded length should be less than %d", maxSelectedPathsEncodedLen)
+		}
+		res = append(res, p)
+	}
+	sort.Strings(res)
+	return slices.Compact(res), nil
+}
+
 func (s *DownloadURLBuilder) BuildDownloadURL(i *MyURL) (u *MyURL, err error) {
 	u = i
 	l := s.GetLastName()
+	q := u.Query()
 	if s.i.Type == ListTypeDirectory {
 		// The extension picks the archive format inside torrent-archiver;
 		// zip stays the default so existing API consumers are unaffected.
@@ -361,8 +432,14 @@ func (s *DownloadURLBuilder) BuildDownloadURL(i *MyURL) (u *MyURL, err error) {
 			l += ".zip"
 		}
 		u.Path += ServiceSeparator + string(ServiceTypeArchive) + "/" + l
+		paths, perr := s.getSelectedPaths()
+		if perr != nil {
+			return nil, perr
+		}
+		for _, p := range paths {
+			q.Add("paths", p)
+		}
 	}
-	q := u.Query()
 	q.Add("download", "true")
 	u.RawQuery = q.Encode()
 	return

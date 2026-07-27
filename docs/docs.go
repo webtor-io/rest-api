@@ -225,6 +225,16 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "csv",
+                        "description": "limit directory archive to selected file/folder paths (repeatable)",
+                        "name": "paths",
+                        "in": "query"
+                    },
+                    {
                         "type": "string",
                         "example": "\"08ada5a7a6183aae1e09d831df6748d566095a10\"",
                         "description": "resource_id",

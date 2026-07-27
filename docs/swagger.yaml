@@ -358,6 +358,13 @@ paths:
         in: query
         name: archive-format
         type: string
+      - collectionFormat: csv
+        description: limit directory archive to selected file/folder paths (repeatable)
+        in: query
+        items:
+          type: string
+        name: paths
+        type: array
       - description: resource_id
         example: '"08ada5a7a6183aae1e09d831df6748d566095a10"'
         in: path
