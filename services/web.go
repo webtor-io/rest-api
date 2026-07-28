@@ -328,6 +328,11 @@ func (s *Web) errorHandler(c *gin.Context) {
 		status = http.StatusNotFound
 	} else if strings.Contains(err.Error(), "timeout") {
 		status = http.StatusRequestTimeout
+	} else if strings.Contains(err.Error(), "deadline exceeded") {
+		// Upstream ran out of time, not the client — 504, so consumers
+		// (RapidAPI et al.) can tell a transient dependency stall from a bug
+		// on our side and retry instead of filing a bug report.
+		status = http.StatusGatewayTimeout
 	}
 	c.PureJSON(status, &ErrorResponse{Error: err.Error()})
 }

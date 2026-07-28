@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"time"
 
+	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"github.com/webtor-io/lazymap"
 )
@@ -16,6 +17,7 @@ const (
 	useInternalTorrentHTTPProxyFlag = "use-internal-torrent-http-proxy"
 	torrentHTTPProxyHostFlag        = "torrent-http-proxy-host"
 	torrentHTTPProxyPortFlag        = "torrent-http-proxy-port"
+	cacheProbeTimeoutFlag           = "cache-probe-timeout"
 )
 
 func RegisterCacheMapFlags(f []cli.Flag) []cli.Flag {
@@ -36,6 +38,12 @@ func RegisterCacheMapFlags(f []cli.Flag) []cli.Flag {
 			EnvVar: "TORRENT_HTTP_PROXY_SERVICE_PORT",
 			Value:  80,
 		},
+		cli.DurationFlag{
+			Name:   cacheProbeTimeoutFlag,
+			Usage:  "cache probe timeout",
+			EnvVar: "CACHE_PROBE_TIMEOUT",
+			Value:  5 * time.Second,
+		},
 	)
 }
 
@@ -45,6 +53,7 @@ type CacheMap struct {
 	useInternalTorrentHTTPProxy bool
 	torrentHTTPProxyHost        string
 	torrentHTTPProxyPort        int
+	probeTimeout                time.Duration
 }
 
 func NewCacheMap(c *cli.Context, cl *http.Client) *CacheMap {
@@ -56,12 +65,17 @@ func NewCacheMap(c *cli.Context, cl *http.Client) *CacheMap {
 		useInternalTorrentHTTPProxy: c.Bool(useInternalTorrentHTTPProxyFlag),
 		torrentHTTPProxyHost:        c.String(torrentHTTPProxyHostFlag),
 		torrentHTTPProxyPort:        c.Int(torrentHTTPProxyPortFlag),
+		probeTimeout:                c.Duration(cacheProbeTimeoutFlag),
 	}
 }
 
+// Get reports whether the content behind u is already fully downloaded by the
+// seeder. The answer only fills the advisory meta.cache flag in the export
+// response, so it must never fail the export itself: any probe error degrades
+// to "not cached". See the comment at the s.cl.Do error branch.
 func (s *CacheMap) Get(u *MyURL) (bool, error) {
 	return s.LazyMap.Get(u.Path, func() (bool, error) {
-		cacheCtx, cacheCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		cacheCtx, cacheCancel := context.WithTimeout(context.Background(), s.probeTimeout)
 		defer cacheCancel()
 		i, err := url.Parse(u.String())
 		if err != nil {
@@ -81,7 +95,15 @@ func (s *CacheMap) Get(u *MyURL) (bool, error) {
 		}
 		res, err := s.cl.Do(req)
 		if err != nil {
-			return false, err
+			// A dead upstream (edge proxy down, seeder still cold-starting
+			// past the deadline) must not turn a URL-minting endpoint into a
+			// 500 — an uncached answer is always a safe fallback, and a
+			// seeder that can't answer within the deadline is not "done" by
+			// any useful definition anyway. Memoizing the negative for the
+			// map's TTL also keeps a flapping upstream from being re-probed
+			// on every request.
+			log.WithError(err).Warnf("failed to probe cache state for %v", u.Path)
+			return false, nil
 		}
 		defer func(Body io.ReadCloser) {
 			_ = Body.Close()

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"net"
 	"net/http"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
@@ -55,7 +57,24 @@ func serve(c *cli.Context) error {
 	defer ts.Close()
 
 	// Setting HTTP Client
-	httpCl := http.DefaultClient
+	// Not http.DefaultClient: every cache probe goes to the same host, and the
+	// default 2 idle conns per host force a fresh TLS handshake on most of
+	// them. Per-request deadlines come from the callers' contexts, so no
+	// client-level Timeout here — only the dial/handshake stages are bounded.
+	httpCl := &http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			DialContext: (&net.Dialer{
+				Timeout:   3 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   32,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   3 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+	}
 
 	// Setting CacheMap
 	cm := s.NewCacheMap(c, httpCl)
