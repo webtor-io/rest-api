@@ -267,6 +267,12 @@ func (s *StreamExporter) Export(r *Resource, i *ListItem, g ParamGetter) (*Expor
 	if err != nil {
 		return nil, err
 	}
+	// A recognised media format does not guarantee a stream URL: .vtt needs no
+	// conversion, so nothing is built for it. Dereferencing the nil URL below
+	// panics the whole /export request.
+	if url == nil {
+		return nil, nil
+	}
 
 	ei, err := s.MakeExportStreamItem(r, i, g)
 	if err != nil {

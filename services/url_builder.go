@@ -4,6 +4,7 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -527,13 +528,24 @@ func (s *StreamURLBuilder) BuildAudioStreamURL(i *MyURL, suffix string) (u *MyUR
 
 func (s *StreamURLBuilder) BuildSRT2VTTURL(i *MyURL) (u *MyURL) {
 	u = i
-	l := strings.TrimSuffix(s.GetLastName(), "srt") + "vtt"
+	name := s.GetLastName()
+	l := strings.TrimSuffix(name, filepath.Ext(name)) + ".vtt"
 	u.Path += ServiceSeparator + string(ServiceTypeSRT2VTT) + "/" + l
 	return u
 }
 
+// vttConvertibleExts are the text-subtitle formats srt2vtt can turn into
+// WebVTT. It sniffs SSA/ASS by content rather than by extension, so the only
+// thing gating them here is this list. Bitmap subtitles (sub/idx, sup) get no
+// stream URL at all. web-ui keeps the same list for user-uploaded subtitles.
+var vttConvertibleExts = map[string]struct{}{
+	"srt": {},
+	"ass": {},
+	"ssa": {},
+}
+
 func (s *StreamURLBuilder) BuildSubtitleStreamURL(i *MyURL) (u *MyURL, err error) {
-	if s.i.Ext == "srt" {
+	if _, ok := vttConvertibleExts[s.i.Ext]; ok {
 		u = s.BuildSRT2VTTURL(i)
 	}
 	return
