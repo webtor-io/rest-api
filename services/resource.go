@@ -94,7 +94,11 @@ func NewResourceMap(ts TorrentStoreGetter, m2t Magnet2TorrentGetter) *ResourceMa
 		ts:                  ts,
 		m2t:                 m2t,
 		torrentStoreTimeout: 10 * time.Second,
-		magnetTimeout:       3 * time.Minute,
+		// Ten minutes, not three: web-ui offers a "try again for 10 minutes"
+		// resolution after the normal 60 s attempt fails, and the caller's
+		// context, not this cap, ends the ordinary request. magnet2torrent's
+		// own cap matches (maxWait).
+		magnetTimeout: 10 * time.Minute,
 	}
 }
 
