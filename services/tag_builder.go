@@ -124,6 +124,12 @@ func (s *VideoTagBuider) BuildTrack(i *ListItem) (*ExportTrack, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Subtitle formats we cannot serve (bitmap ones, anything new that grows a
+	// media format before it grows a URL) yield no URL. Skip the track instead
+	// of dereferencing nil — BuildAttachedResources already drops nil tracks.
+	if u == nil {
+		return nil, nil
+	}
 	lc := filepath.Ext(strings.TrimSuffix(i.Name, filepath.Ext(i.Name)))
 	label := ""
 	srclang := ""

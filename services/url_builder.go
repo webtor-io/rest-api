@@ -547,6 +547,14 @@ var vttConvertibleExts = map[string]struct{}{
 func (s *StreamURLBuilder) BuildSubtitleStreamURL(i *MyURL) (u *MyURL, err error) {
 	if _, ok := vttConvertibleExts[s.i.Ext]; ok {
 		u = s.BuildSRT2VTTURL(i)
+		return
+	}
+	// Already WebVTT: hand out the file itself rather than routing it through
+	// a converter that has nothing to convert. Returning no URL at all is not
+	// an option — callers treat a recognised subtitle as always having one,
+	// and the nil crashed both the stream export and the track builder.
+	if s.i.Ext == "vtt" {
+		u = i
 	}
 	return
 }
