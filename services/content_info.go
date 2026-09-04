@@ -25,9 +25,9 @@ var formats = map[MediaFormat][]string{
 	// 1.33% of a 6000-torrent sample from torrent-store carried one, and for
 	// 38 of those torrents it was the only playable file.
 	Audio: {"mp3", "wav", "ogg", "flac", "m4a", "m4b", "aac", "opus", "wma", "ape", "mka", "wv"},
-	// webp/avif have MIME types in Go's builtin table, so the browser gets a
-	// correct Content-Type. bmp does not, but browsers sniff it fine; it just
-	// never becomes a thumbnail, since web-ui registers no bmp decoder.
+	// All three are in Go's builtin MIME table, so the browser gets a correct
+	// Content-Type without a system mime.types file. bmp still never becomes a
+	// thumbnail, though — web-ui registers no bmp decoder.
 	Image: {"png", "gif", "jpg", "jpeg", "webp", "bmp", "avif"},
 	// Text subtitles only. sub/idx (VobSub) and sup (PGS) are bitmap formats
 	// srt2vtt cannot convert.
@@ -36,12 +36,18 @@ var formats = map[MediaFormat][]string{
 
 // transcodeExt lists the extensions routed through content-transcoder instead
 // of being served as-is. For video that means everything nginx-vod cannot
-// package. For audio it means everything the browser cannot be trusted to play
-// from a bare file response: the runtime image ships no mime.types, so
-// mime.TypeByExtension returns "" for every audio extension and the player has
-// no Content-Type to go on. mp3/wav/ogg predate that reasoning and are left
-// alone — they work today and moving them onto the transcoder would spend CPU
-// to fix nothing.
+// package.
+//
+// For audio the direct branch hands the file to the browser and depends on it
+// recognising the response. Go's builtin MIME table covers mp3, wav, ogg,
+// flac, m4a and opus, but has no entry for m4b, aac, wma, ape, mka or wv, and
+// the runtime image ships no mime.types to fill the gap — those arrive with a
+// sniffed Content-Type and no guarantee the player takes them. Routing every
+// added format through HLS keeps the outcome the same for all of them; AAC
+// payloads remux rather than re-encode, so the cost is small.
+//
+// mp3/wav/ogg stay on the direct branch: they work today and moving them would
+// spend CPU to fix nothing. flac/m4a predate this list's current reasoning.
 var transcodeExt = []string{
 	"avi", "mkv", "m4v", "ts", "vob", "mov", "m2ts",
 	"flac", "m4a", "m4b", "aac", "opus", "wma", "ape", "mka", "wv",
