@@ -3,7 +3,6 @@ package services
 import (
 	"math"
 	"sort"
-	"strconv"
 
 	"github.com/pkg/errors"
 )
@@ -66,53 +65,34 @@ func (s *Subdomains) updateScoreByInfoHash(stats []NodeStatWithScore, infohash s
 	if len(stats) == 0 {
 		return stats, nil
 	}
-	// Ascending by name — the same order torrent-http-proxy uses in
-	// distributeByNodeHash. The two services slice the hash space with the
-	// same intervals, so the order is what decides whether a client lands on
-	// the node thp calls home. Descending here (until 2026-09-05) sent two
-	// thirds of hashes to a node thp considered foreign; thp then fell back
-	// to preferLocalNode and re-partitioned the whole space over that node's
-	// 30 pods, so only ~10 of them ever got traffic — at 3× the intended
-	// load — while the rest sat empty (worker62/64 bimodal, worker63 even).
-	sort.Slice(stats, func(i, j int) bool {
-		return stats[i].Name < stats[j].Name
-	})
-	hex := infohash[0:5]
-	num, err := strconv.ParseInt(hex, 16, 64)
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to parse hex from infohash=%v", infohash)
+	// Rendezvous over node names — the same ranking torrent-http-proxy
+	// computes in distributeByNodeHash (both copies of rendezvousOrder are
+	// pinned to one literal test vector). The first node is the one thp
+	// will call home, so that is where the client is sent; the runners-up
+	// are its fallbacks in order. Until 2026-09-07 both sides cut the hash
+	// space into intervals over nodes sorted by name, and a node joining or
+	// leaving moved about half the hashes to another node (cold per-node
+	// disk caches); with rendezvous only the hashes of that node move.
+	names := make([]string, 0, len(stats))
+	for _, st := range stats {
+		names = append(names, st.Name)
 	}
-	num = num * 1000
-	total := 1048575 * 1000
-	// The top of the space ("fffff…") is >= len*interval once integer
-	// division has floored the interval; it belongs to the last node, the
-	// same one thp gives it. Defaulting to 0 sent it to the first node.
-	t := len(stats) - 1
-	interval := int64(total / len(stats))
-	for i := 0; i < len(stats); i++ {
-		if num < (int64(i)+1)*interval {
-			t = i
-			break
-		}
+	rank := map[string]int{}
+	for i, n := range rendezvousOrder(infohash, names) {
+		rank[n] = i
 	}
-
 	spread := int(math.Floor(float64(len(stats)) / 2))
 	if spread > infohashMaxSpread {
 		spread = infohashMaxSpread
 	}
+	// Distance 0 is home (full score), 1..spread the next runners-up
+	// (score halved per step), everything further spread+1.
 	for i := range stats {
-		stats[i].Distance = spread + 1
-	}
-	for n := -spread; n <= spread; n++ {
-		m := t + n
-		if m < 0 {
-			m = len(stats) + m
+		d := rank[stats[i].Name]
+		if d > spread+1 {
+			d = spread + 1
 		}
-		if m >= len(stats) {
-			m = m - len(stats)
-		}
-		d := math.Abs(float64(n))
-		stats[m].Distance = int(d)
+		stats[i].Distance = d
 	}
 	for i := range stats {
 		if stats[i].Distance == 0 {
