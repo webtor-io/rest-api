@@ -66,8 +66,16 @@ func (s *Subdomains) updateScoreByInfoHash(stats []NodeStatWithScore, infohash s
 	if len(stats) == 0 {
 		return stats, nil
 	}
+	// Ascending by name — the same order torrent-http-proxy uses in
+	// distributeByNodeHash. The two services slice the hash space with the
+	// same intervals, so the order is what decides whether a client lands on
+	// the node thp calls home. Descending here (until 2026-09-05) sent two
+	// thirds of hashes to a node thp considered foreign; thp then fell back
+	// to preferLocalNode and re-partitioned the whole space over that node's
+	// 30 pods, so only ~10 of them ever got traffic — at 3× the intended
+	// load — while the rest sat empty (worker62/64 bimodal, worker63 even).
 	sort.Slice(stats, func(i, j int) bool {
-		return stats[i].Name > stats[j].Name
+		return stats[i].Name < stats[j].Name
 	})
 	hex := infohash[0:5]
 	num, err := strconv.ParseInt(hex, 16, 64)
