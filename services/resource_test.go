@@ -48,7 +48,7 @@ func assertSintel(t *testing.T, r *Resource) {
 	assert.Equal("Sintel", r.Name)
 	assert.EqualValues(129368064, r.Size)
 	assert.Equal(11, len(r.Files))
-	assert.Equal([]string{"Sintel.de.srt"}, r.Files[0].Path)
+	assert.Equal([]string{"Sintel", "Sintel.de.srt"}, r.Files[0].Path) // paths carry the torrent root since 1277dc5
 	assert.EqualValues(1652, r.Files[0].Size)
 }
 
