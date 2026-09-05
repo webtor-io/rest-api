@@ -84,7 +84,10 @@ func (s *Subdomains) updateScoreByInfoHash(stats []NodeStatWithScore, infohash s
 	}
 	num = num * 1000
 	total := 1048575 * 1000
-	t := 0
+	// The top of the space ("fffff…") is >= len*interval once integer
+	// division has floored the interval; it belongs to the last node, the
+	// same one thp gives it. Defaulting to 0 sent it to the first node.
+	t := len(stats) - 1
 	interval := int64(total / len(stats))
 	for i := 0; i < len(stats); i++ {
 		if num < (int64(i)+1)*interval {

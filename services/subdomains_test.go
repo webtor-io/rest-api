@@ -30,7 +30,7 @@ func thpHomeNode(nodes []string, infohash string) string {
 func TestSubdomainHomeMatchesProxyNodeHash(t *testing.T) {
 	nodes := []string{"worker62", "worker63", "worker64"}
 	s := &Subdomains{}
-	for _, prefix := range []string{"00000", "2aaaa", "55554", "55555", "80000", "aaaa9", "aaaaa", "d0000", "ffff0"} {
+	for _, prefix := range []string{"00000", "2aaaa", "55554", "55555", "80000", "aaaa9", "aaaaa", "d0000", "ffff0", "fffff"} {
 		infohash := prefix + "000000000000000000000000000000000000"
 		var stats []NodeStatWithScore
 		// Hand the scorer the nodes in the worst order to prove it sorts.
@@ -63,5 +63,23 @@ func TestSubdomainNeighboursFollowHome(t *testing.T) {
 	}
 	if len(got) != 3 || got[0].Name != "worker63" || got[0].Score != 1 || got[1].Score != 0.5 {
 		t.Fatalf("got %+v", []string{got[0].Name, fmt.Sprint(got[0].Score), fmt.Sprint(got[1].Score)})
+	}
+}
+
+// With seven nodes the floored interval leaves "fffff…" above the last
+// cut; it must still go to the last node (thp puts it there too), not
+// silently to the first.
+func TestSubdomainTopOfHashSpaceGoesToLastNode(t *testing.T) {
+	s := &Subdomains{}
+	var stats []NodeStatWithScore
+	for i := 1; i <= 7; i++ {
+		stats = append(stats, NodeStatWithScore{NodeStat: NodeStat{Name: fmt.Sprintf("n%d", i), Subdomain: "x"}, Score: 1, Distance: -1})
+	}
+	got, err := s.getScoredStatsByPoolAndRole(stats, "fffffffffffffffffffffffffffffffffffffffe", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got[0].Name != "n7" {
+		t.Fatalf("top hash sent to %s, want n7", got[0].Name)
 	}
 }
