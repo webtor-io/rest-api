@@ -208,6 +208,20 @@ definitions:
           with tens of thousands of files.
         type: integer
     type: object
+  services.SpeedtestResponse:
+    properties:
+      urls:
+        items:
+          $ref: '#/definitions/services.SpeedtestURL'
+        type: array
+    type: object
+  services.SpeedtestURL:
+    properties:
+      type:
+        type: string
+      url:
+        type: string
+    type: object
 info:
   contact:
     email: support@webtor.io
@@ -300,7 +314,8 @@ paths:
     get:
       consumes:
       - '*/*'
-      description: Receives id and returns torrent for resource.
+      description: Receives id and returns torrent file (binary, Content-Type application/x-bittorrent)
+        for resource.
       parameters:
       - description: resource_id
         example: '"08ada5a7a6183aae1e09d831df6748d566095a10"'
@@ -312,9 +327,9 @@ paths:
       - application/x-bittorrent
       responses:
         "200":
-          description: OK
+          description: torrent file
           schema:
-            $ref: '#/definitions/services.ResourceResponse'
+            type: file
         "400":
           description: Bad Request
           schema:
@@ -340,31 +355,6 @@ paths:
         the file's index in the torrent's natural file order
         (matches the fileIdx convention used by Stremio addons).
       parameters:
-      - description: output
-        enum:
-        - download
-        - stream
-        - torrent_client_stat
-        - subtitles
-        - media_probe
-        in: query
-        name: output
-        type: string
-      - default: zip
-        description: archive format for directory downloads
-        enum:
-        - zip
-        - tar
-        in: query
-        name: archive-format
-        type: string
-      - collectionFormat: csv
-        description: limit directory archive to selected file/folder paths (repeatable)
-        in: query
-        items:
-          type: string
-        name: paths
-        type: array
       - description: resource_id
         example: '"08ada5a7a6183aae1e09d831df6748d566095a10"'
         in: path
@@ -377,6 +367,82 @@ paths:
         name: content_id
         required: true
         type: string
+      - description: 'comma-separated list of export types to generate; allowed values:
+          download, stream, torrent_client_stat, subtitles, media_probe; if omitted
+          or empty, all types are exported; an unknown value yields 400'
+        example: '"download,stream"'
+        in: query
+        name: types
+        type: string
+      - description: API key embedded into the generated export URLs; falls back to
+          X-Api-Key header, then to the server-configured key
+        in: query
+        name: api-key
+        type: string
+      - description: API key embedded into the generated export URLs (used if api-key
+          query parameter is absent)
+        in: header
+        name: X-Api-Key
+        type: string
+      - description: JWT embedded into the generated export URLs; falls back to X-Token
+          header; if neither is provided, the server signs its own token with the
+          configured role; the token's role claim selects the premium domain and download
+          subdomains
+        in: query
+        name: token
+        type: string
+      - description: JWT embedded into the generated export URLs (used if token query
+          parameter is absent)
+        in: header
+        name: X-Token
+        type: string
+      - description: opaque user identifier propagated into the generated export URLs;
+          falls back to X-User-Id header
+        in: query
+        name: user-id
+        type: string
+      - description: opaque user identifier propagated into the generated export URLs
+          (used if user-id query parameter is absent)
+        in: header
+        name: X-User-Id
+        type: string
+      - description: request correlation identifier propagated into the generated
+          export URLs; falls back to X-Request-Id header
+        in: query
+        name: request-id
+        type: string
+      - description: request correlation identifier propagated into the generated
+          export URLs (used if request-id query parameter is absent)
+        in: header
+        name: X-Request-Id
+        type: string
+      - default: "true"
+        description: any value except \
+        in: query
+        name: use-premium-domain
+        type: string
+      - description: IMDB identifier forwarded into the subtitles export URL (subtitles
+          type only)
+        in: query
+        name: imdb-id
+        type: string
+      - default: zip
+        description: archive format for directory downloads
+        enum:
+        - zip
+        - tar
+        in: query
+        name: archive-format
+        type: string
+      - collectionFormat: multi
+        description: limit a directory archive to the selected file/folder paths (repeatable);
+          each path must exist in the torrent and be inside the exported directory;
+          at most 1024 paths and about 6000 percent-encoded bytes in total
+        in: query
+        items:
+          type: string
+        name: paths
+        type: array
       produces:
       - application/json
       responses:
@@ -432,8 +498,8 @@ paths:
         in: query
         name: output
         type: string
-      - default: name
-        description: sort
+      - description: sort order; if omitted, items are returned in the torrent's original
+          file order
         enum:
         - name
         - size
@@ -462,4 +528,61 @@ paths:
       summary: Lists resource
       tags:
       - list
+  /speedtest:
+    get:
+      consumes:
+      - '*/*'
+      description: |-
+        Returns urls for measuring download speed. Each url points to a /speedtest endpoint on a download host and carries the size, token and api-key query parameters.
+        The "standard" url is always present; a "premium" url is added when a premium domain is configured. The token's role claim selects which download subdomains are eligible.
+      parameters:
+      - description: JWT embedded into the generated speed test URLs; falls back to
+          X-Token header; if neither is provided, the server signs its own token with
+          the configured role
+        in: query
+        name: token
+        type: string
+      - description: JWT embedded into the generated speed test URLs (used if token
+          query parameter is absent)
+        in: header
+        name: X-Token
+        type: string
+      - description: API key embedded into the generated speed test URLs; falls back
+          to X-Api-Key header, then to the server-configured key
+        in: query
+        name: api-key
+        type: string
+      - description: API key embedded into the generated speed test URLs (used if
+          api-key query parameter is absent)
+        in: header
+        name: X-Api-Key
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/services.SpeedtestResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/services.ErrorResponse'
+      summary: Returns speed test urls
+      tags:
+      - speedtest
+securityDefinitions:
+  ApiKeyHeader:
+    description: Optional API key. It is not validated by this API itself, it is embedded
+      as api-key into the signed export/speedtest URLs and validated by the upstream
+      services that serve them.
+    in: header
+    name: X-Api-Key
+    type: apiKey
+  ApiKeyQuery:
+    description: Optional API key passed as a query parameter. Same semantics as X-Api-Key
+      header (query value takes precedence).
+    in: query
+    name: api-key
+    type: apiKey
 swagger: "2.0"

@@ -129,7 +129,7 @@
         },
         "/resource/{resource_id}.torrent": {
             "get": {
-                "description": "Receives id and returns torrent for resource.",
+                "description": "Receives id and returns torrent file (binary, Content-Type application/x-bittorrent) for resource.",
                 "consumes": [
                     "*/*"
                 ],
@@ -152,9 +152,9 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "torrent file",
                         "schema": {
-                            "$ref": "#/definitions/services.ResourceResponse"
+                            "type": "file"
                         }
                     },
                     "400": {
@@ -193,16 +193,87 @@
                 "summary": "Exports resource content",
                 "parameters": [
                     {
-                        "enum": [
-                            "download",
-                            "stream",
-                            "torrent_client_stat",
-                            "subtitles",
-                            "media_probe"
-                        ],
                         "type": "string",
-                        "description": "output",
-                        "name": "output",
+                        "example": "\"08ada5a7a6183aae1e09d831df6748d566095a10\"",
+                        "description": "resource_id",
+                        "name": "resource_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "example": "\"ca2453df3e7691c28934eebed5a253ee0aabd29f\"",
+                        "description": "content_id",
+                        "name": "content_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "example": "\"download,stream\"",
+                        "description": "comma-separated list of export types to generate; allowed values: download, stream, torrent_client_stat, subtitles, media_probe; if omitted or empty, all types are exported; an unknown value yields 400",
+                        "name": "types",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key embedded into the generated export URLs; falls back to X-Api-Key header, then to the server-configured key",
+                        "name": "api-key",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key embedded into the generated export URLs (used if api-key query parameter is absent)",
+                        "name": "X-Api-Key",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "description": "JWT embedded into the generated export URLs; falls back to X-Token header; if neither is provided, the server signs its own token with the configured role; the token's role claim selects the premium domain and download subdomains",
+                        "name": "token",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "JWT embedded into the generated export URLs (used if token query parameter is absent)",
+                        "name": "X-Token",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "description": "opaque user identifier propagated into the generated export URLs; falls back to X-User-Id header",
+                        "name": "user-id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "opaque user identifier propagated into the generated export URLs (used if user-id query parameter is absent)",
+                        "name": "X-User-Id",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "description": "request correlation identifier propagated into the generated export URLs; falls back to X-Request-Id header",
+                        "name": "request-id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "request correlation identifier propagated into the generated export URLs (used if request-id query parameter is absent)",
+                        "name": "X-Request-Id",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "default": "true",
+                        "description": "any value except \\",
+                        "name": "use-premium-domain",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "IMDB identifier forwarded into the subtitles export URL (subtitles type only)",
+                        "name": "imdb-id",
                         "in": "query"
                     },
                     {
@@ -221,26 +292,10 @@
                         "items": {
                             "type": "string"
                         },
-                        "collectionFormat": "csv",
-                        "description": "limit directory archive to selected file/folder paths (repeatable)",
+                        "collectionFormat": "multi",
+                        "description": "limit a directory archive to the selected file/folder paths (repeatable); each path must exist in the torrent and be inside the exported directory; at most 1024 paths and about 6000 percent-encoded bytes in total",
                         "name": "paths",
                         "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "example": "\"08ada5a7a6183aae1e09d831df6748d566095a10\"",
-                        "description": "resource_id",
-                        "name": "resource_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "example": "\"ca2453df3e7691c28934eebed5a253ee0aabd29f\"",
-                        "description": "content_id",
-                        "name": "content_id",
-                        "in": "path",
-                        "required": true
                     }
                 ],
                 "responses": {
@@ -327,8 +382,7 @@
                             "size"
                         ],
                         "type": "string",
-                        "default": "name",
-                        "description": "sort",
+                        "description": "sort order; if omitted, items are returned in the torrent's original file order",
                         "name": "sort",
                         "in": "query"
                     }
@@ -350,6 +404,61 @@
                         "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/services.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/services.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/speedtest": {
+            "get": {
+                "description": "Returns urls for measuring download speed. Each url points to a /speedtest endpoint on a download host and carries the size, token and api-key query parameters.\nThe \"standard\" url is always present; a \"premium\" url is added when a premium domain is configured. The token's role claim selects which download subdomains are eligible.",
+                "consumes": [
+                    "*/*"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "speedtest"
+                ],
+                "summary": "Returns speed test urls",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "JWT embedded into the generated speed test URLs; falls back to X-Token header; if neither is provided, the server signs its own token with the configured role",
+                        "name": "token",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "JWT embedded into the generated speed test URLs (used if token query parameter is absent)",
+                        "name": "X-Token",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key embedded into the generated speed test URLs; falls back to X-Api-Key header, then to the server-configured key",
+                        "name": "api-key",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "API key embedded into the generated speed test URLs (used if api-key query parameter is absent)",
+                        "name": "X-Api-Key",
+                        "in": "header"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/services.SpeedtestResponse"
                         }
                     },
                     "500": {
@@ -645,6 +754,42 @@
                     "type": "integer"
                 }
             }
+        },
+        "services.SpeedtestResponse": {
+            "type": "object",
+            "properties": {
+                "urls": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/services.SpeedtestURL"
+                    }
+                }
+            }
+        },
+        "services.SpeedtestURL": {
+            "type": "object",
+            "properties": {
+                "type": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "ApiKeyHeader": {
+            "description": "Optional API key. It is not validated by this API itself, it is embedded as api-key into the signed export/speedtest URLs and validated by the upstream services that serve them.",
+            "type": "apiKey",
+            "name": "X-Api-Key",
+            "in": "header"
+        },
+        "ApiKeyQuery": {
+            "description": "Optional API key passed as a query parameter. Same semantics as X-Api-Key header (query value takes precedence).",
+            "type": "apiKey",
+            "name": "api-key",
+            "in": "query"
         }
     }
 }

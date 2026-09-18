@@ -28,6 +28,16 @@ import (
 // @contact.url    https://webtor.io/support
 // @contact.email  support@webtor.io
 
+// @securityDefinitions.apikey ApiKeyHeader
+// @in   header
+// @name X-Api-Key
+// @description Optional API key. It is not validated by this API itself, it is embedded as api-key into the signed export/speedtest URLs and validated by the upstream services that serve them.
+
+// @securityDefinitions.apikey ApiKeyQuery
+// @in   query
+// @name api-key
+// @description Optional API key passed as a query parameter. Same semantics as X-Api-Key header (query value takes precedence).
+
 const (
 	webHostFlag = "host"
 	webPortFlag = "port"
@@ -174,13 +184,13 @@ func magnetFromInfoHash(id, name string) string {
 }
 
 // @Summary Returns torrent for resource
-// @Description Receives id and returns torrent for resource.
+// @Description Receives id and returns torrent file (binary, Content-Type application/x-bittorrent) for resource.
 // @Schemes
 // @Param resource_id path string true "resource_id" example("08ada5a7a6183aae1e09d831df6748d566095a10")
 // @Tags  resource
 // @Accept */*
 // @Produce application/x-bittorrent
-// @Success 200 {object} ResourceResponse
+// @Success 200 {file} binary "torrent file"
 // @Failure 400 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
@@ -204,7 +214,7 @@ func (s *Web) getTorrent(g *gin.Context) {
 // @Param limit       query int    false "limit"
 // @Param offset      query int    false "offset"
 // @Param output      query string false "output" Enums(list, tree)
-// @Param sort        query string false "sort" Enums(name, size) default(name)
+// @Param sort        query string false "sort order; if omitted, items are returned in the torrent's original file order" Enums(name, size)
 // @Schemes
 // @Tags   list
 // @Accept */*
@@ -239,11 +249,21 @@ func (s *Web) getList(g *gin.Context) {
 // @Description either the SHA1 of the file's path (returned by /list) or
 // @Description the file's index in the torrent's natural file order
 // @Description (matches the fileIdx convention used by Stremio addons).
-// @Param output         query string false "output"         Enums(download, stream, torrent_client_stat, subtitles, media_probe)
-// @Param archive-format query string false "archive format for directory downloads" Enums(zip, tar) default(zip)
-// @Param paths query []string false "limit directory archive to selected file/folder paths (repeatable)"
 // @Param resource_id path  string true  "resource_id" example("08ada5a7a6183aae1e09d831df6748d566095a10")
 // @Param content_id  path  string true  "content_id"  example("ca2453df3e7691c28934eebed5a253ee0aabd29f")
+// @Param types query string false "comma-separated list of export types to generate; allowed values: download, stream, torrent_client_stat, subtitles, media_probe; if omitted or empty, all types are exported; an unknown value yields 400" example("download,stream")
+// @Param api-key query string false "API key embedded into the generated export URLs; falls back to X-Api-Key header, then to the server-configured key"
+// @Param X-Api-Key header string false "API key embedded into the generated export URLs (used if api-key query parameter is absent)"
+// @Param token query string false "JWT embedded into the generated export URLs; falls back to X-Token header; if neither is provided, the server signs its own token with the configured role; the token's role claim selects the premium domain and download subdomains"
+// @Param X-Token header string false "JWT embedded into the generated export URLs (used if token query parameter is absent)"
+// @Param user-id query string false "opaque user identifier propagated into the generated export URLs; falls back to X-User-Id header"
+// @Param X-User-Id header string false "opaque user identifier propagated into the generated export URLs (used if user-id query parameter is absent)"
+// @Param request-id query string false "request correlation identifier propagated into the generated export URLs; falls back to X-Request-Id header"
+// @Param X-Request-Id header string false "request correlation identifier propagated into the generated export URLs (used if request-id query parameter is absent)"
+// @Param use-premium-domain query string false "any value except \"false\" (including omission) allows premium-role tokens to get URLs on the premium domain; set to \"false\" to force the standard domain; torrent_client_stat URLs always use the standard domain" default(true)
+// @Param imdb-id query string false "IMDB identifier forwarded into the subtitles export URL (subtitles type only)"
+// @Param archive-format query string false "archive format for directory downloads" Enums(zip, tar) default(zip)
+// @Param paths query []string false "limit a directory archive to the selected file/folder paths (repeatable); each path must exist in the torrent and be inside the exported directory; at most 1024 paths and about 6000 percent-encoded bytes in total" collectionFormat(multi)
 // @Schemes
 // @Tags export
 // @Accept */*
@@ -364,6 +384,20 @@ func (s *Web) Serve() error {
 	return http.Serve(s.ln, r)
 }
 
+// @Summary Returns speed test urls
+// @Description Returns urls for measuring download speed. Each url points to a /speedtest endpoint on a download host and carries the size, token and api-key query parameters.
+// @Description The "standard" url is always present; a "premium" url is added when a premium domain is configured. The token's role claim selects which download subdomains are eligible.
+// @Param token query string false "JWT embedded into the generated speed test URLs; falls back to X-Token header; if neither is provided, the server signs its own token with the configured role"
+// @Param X-Token header string false "JWT embedded into the generated speed test URLs (used if token query parameter is absent)"
+// @Param api-key query string false "API key embedded into the generated speed test URLs; falls back to X-Api-Key header, then to the server-configured key"
+// @Param X-Api-Key header string false "API key embedded into the generated speed test URLs (used if api-key query parameter is absent)"
+// @Schemes
+// @Tags speedtest
+// @Accept */*
+// @Produce json
+// @Success 200 {object} SpeedtestResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /speedtest [get]
 func (s *Web) getSpeedtest(g *gin.Context) {
 	urls, err := s.st.GetURLs(g)
 	if err != nil {
