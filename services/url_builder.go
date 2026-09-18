@@ -492,11 +492,12 @@ func (s *StreamURLBuilder) BuildTranscodeURL(i *MyURL, suffix string) (u *MyURL,
 	u = i
 	u.Path += ServiceSeparator + string(ServiceTypeTranscode) + suffix
 	u.transcode = true
-	cached, err := s.cm.Get(u)
-	if err != nil {
-		return nil, err
-	}
-	u.transcodeCached = cached
+	// No cache probe: content-transcoder has had no pre-transcoded output
+	// since its session API (76cc495, 2026-03) — ?done=true on ~hls has
+	// answered 404 ever since, ~12k times a day for nothing, and reviving
+	// that route briefly turned the answer into a 200 that every player
+	// read as "cached" (2026-09-18). transcode_cache stays false.
+	u.transcodeCached = false
 	return u, nil
 }
 

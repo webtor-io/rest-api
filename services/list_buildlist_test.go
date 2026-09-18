@@ -1,6 +1,8 @@
 package services
 
 import (
+	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -149,5 +151,68 @@ func TestList_buildList_PaginationWithoutSortMatchesFullList(t *testing.T) {
 		assert.Equal(t, full.Items[tc.offset:end], page.Items, "offset=%d limit=%d", tc.offset, tc.limit)
 		assert.Equal(t, full.Count, page.Count, "offset=%d limit=%d", tc.offset, tc.limit)
 		assert.Equal(t, full.ListItem.Size, page.ListItem.Size, "offset=%d limit=%d", tc.offset, tc.limit)
+	}
+}
+
+// FindByID must resolve exactly the items /list emits — same IDs, same
+// directory sizes — without building the list. /export used to build the
+// full listing to pick one item.
+func TestList_FindByID_MatchesList(t *testing.T) {
+	l := NewList()
+	r := &Resource{
+		Files: []*File{
+			{Path: []string{"a", "b", "f1"}, Size: 10},
+			{Path: []string{"a", "b", "c", "f2"}, Size: 20},
+			{Path: []string{"a", "d", "f3"}, Size: 30},
+			{Path: []string{"root.txt"}, Size: 5},
+		},
+	}
+	full := l.buildList(r, &ListGetArgs{Path: []string{}, Sort: ListSortTypeNone})
+	if len(full.Items) != 8 {
+		t.Fatalf("fixture: %d items, want 8", len(full.Items))
+	}
+	for _, want := range full.Items {
+		got, ok := l.FindByID(r, want.ID)
+		if !ok {
+			t.Errorf("%s (%s) not found", want.PathStr, want.ID)
+			continue
+		}
+		assert.Equal(t, want.PathStr, got.PathStr)
+		assert.Equal(t, want.Type, got.Type)
+		assert.Equal(t, want.Size, got.Size, "size of %s", want.PathStr)
+		assert.Equal(t, want.Name, got.Name)
+		if want.Type == ListTypeFile {
+			assert.Equal(t, want.Index, got.Index, "index of %s", want.PathStr)
+		}
+	}
+	root, ok := l.FindByID(r, full.ID)
+	if assert.True(t, ok, "root by id") {
+		assert.Equal(t, int64(65), root.Size)
+		assert.Equal(t, ListTypeDirectory, root.Type)
+	}
+	if _, ok := l.FindByID(r, "0000000000000000000000000000000000000000"); ok {
+		t.Error("unknown id must not be found")
+	}
+}
+
+// A walk whose caller has gone away stops and Get reports it, instead of
+// finishing an 84 s build for nobody.
+func TestList_Get_CancelledContextStops(t *testing.T) {
+	l := NewList()
+	r := &Resource{}
+	for i := 0; i < 3*walkCheckEvery; i++ {
+		r.Files = append(r.Files, &File{Path: []string{"d", fmt.Sprintf("f%d", i)}, Size: 1})
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	for _, out := range []ListOutputType{ListOutputTypeList, ListOutputTypeTree} {
+		_, err := l.Get(r, &ListGetArgs{Path: []string{}, Sort: ListSortTypeNone, Output: out, Ctx: ctx})
+		if err == nil {
+			t.Errorf("output=%v: cancelled context must yield an error", out)
+		}
+	}
+	res, err := l.Get(r, &ListGetArgs{Path: []string{}, Sort: ListSortTypeNone, Output: ListOutputTypeList, Ctx: context.Background()})
+	if err != nil || res.Count != 3*walkCheckEvery+1 {
+		t.Errorf("live context: err=%v count=%d", err, res.Count)
 	}
 }

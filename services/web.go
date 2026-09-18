@@ -236,6 +236,7 @@ func (s *Web) getList(g *gin.Context) {
 		g.Error(err)
 		return
 	}
+	args.Ctx = g.Request.Context()
 	cr, err := s.c.Get(r, args)
 	if err != nil {
 		g.Error(err)
@@ -281,7 +282,10 @@ func (s *Web) getExport(g *gin.Context) {
 	}
 	contentID := strings.ToLower(g.Param("content_id"))
 	resourceID := strings.ToLower(g.Param("resource_id"))
-	r, err := s.rm.Get(g.Request.Context(), []byte(resourceID))
+	// The manifest (ID, Name, Files) is all export needs; Get pulled and
+	// parsed the whole .torrent — 21 MB for a 184k-file dump, over the 10 s
+	// store timeout, which is where the 504s on export came from.
+	r, err := s.rm.GetManifest(g.Request.Context(), resourceID)
 	if err != nil {
 		g.Error(err)
 		return
@@ -299,19 +303,8 @@ func (s *Web) getExport(g *gin.Context) {
 		it := s.c.buildFile(r.Files[idx], idx)
 		item = &it
 	} else if sha1R.Match([]byte(contentID)) {
-		cr, lerr := s.c.Get(r, NewListGetArgs())
-		if lerr != nil {
-			g.Error(lerr)
-			return
-		}
-		for _, i := range cr.Items {
-			if i.ID == contentID {
-				item = &i
-				break
-			}
-		}
-		if item == nil && cr.ID == contentID {
-			item = &cr.ListItem
+		if it, ok := s.c.FindByID(r, contentID); ok {
+			item = it
 		}
 	} else {
 		g.Error(errors.Errorf("failed to parse content id %v", contentID))
