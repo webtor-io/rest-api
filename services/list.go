@@ -131,20 +131,6 @@ func pathBeginsWith(source []string, start []string) bool {
 	return check
 }
 
-func (s *List) buildDirSize(r *Resource, prefix []string) int64 {
-	var size int64
-	for _, f := range r.Files {
-		if !pathBeginsWith(f.Path, prefix) {
-			if size > 0 {
-				break
-			}
-			continue
-		}
-		size += f.Size
-	}
-	return size
-}
-
 func (s *List) buildRootItem(path []string, size int64) ListItem {
 	fps := "/" + strings.Join(path, "/")
 	return ListItem{
@@ -156,50 +142,90 @@ func (s *List) buildRootItem(path []string, size int64) ListItem {
 	}
 }
 
+// dirKey extends the joined relative directory key by one component.
+func dirKey(key, component string) string {
+	if key == "" {
+		return component
+	}
+	return key + "/" + component
+}
+
 func (s *List) buildList(r *Resource, args *ListGetArgs) ListResponse {
 	var items []ListItem
 	var size int64
-	// seen tracks already-emitted directory prefixes by their joined path.
-	// Was a [][]string scanned linearly with testEq for every path component
-	// of every file — O(files * depth * dirs), quadratic in directory count
-	// and a memory/CPU spike on torrents with thousands of nested dirs. A
-	// string-keyed set makes the dedup O(1) per check with identical output
-	// (dirs are still emitted in first-seen order).
+	count := 0
+
+	// Directory sizes in one pass over the files: O(files × depth). The
+	// previous buildDirSize rescanned r.Files for every directory it emitted,
+	// O(dirs × files) — 16k dirs × 184k files on a 193 GiB game-source
+	// torrent was 3×10^9 path comparisons and 84 s of CPU for a single
+	// list?limit=1 (rest-api OOM, 2026-09-18). Keyed by the path relative to
+	// args.Path, which is also what the old prefix check was meant to
+	// compare against.
+	dirSizes := map[string]int64{}
+	for _, f := range r.Files {
+		if !pathBeginsWith(f.Path, args.Path) {
+			continue
+		}
+		key := ""
+		for _, v := range f.Path[len(args.Path) : len(f.Path)-1] {
+			key = dirKey(key, v)
+			dirSizes[key] += f.Size
+		}
+	}
+
+	// Without a sort the response order is the walk order, so once
+	// offset+limit items are collected nothing past them can be returned —
+	// the rest only needs counting. Keeps list?limit=1 from materialising a
+	// 200k-element []ListItem (130 MiB retained per request) to return one.
+	pageFull := func() bool {
+		return args.Sort == ListSortTypeNone && args.Limit != 0 && len(items) >= args.Offset+args.Limit
+	}
+
+	// seen tracks already-emitted directory prefixes by their joined path,
+	// O(1) per check; dirs are emitted in first-seen order.
 	seen := map[string]struct{}{}
 	for i, f := range r.Files {
 		if !pathBeginsWith(f.Path, args.Path) {
 			continue
 		}
 		if len(f.Path) > len(args.Path) {
-			var p []string
-			for _, v := range f.Path[len(args.Path) : len(f.Path)-1] {
-				p = append(p, v)
-				key := strings.Join(p, "/")
-				if _, ok := seen[key]; !ok {
-					seen[key] = struct{}{}
-					var fp []string
-					fp = append(fp, args.Path...)
-					fp = append(fp, p...)
-					fps := "/" + strings.Join(fp, "/")
-					items = append(items, ListItem{
-						ID:      fmt.Sprintf("%x", sha1.Sum([]byte(fps))),
-						Name:    p[len(p)-1],
-						Size:    s.buildDirSize(r, p),
-						PathStr: fps,
-						Path:    fp,
-						Type:    ListTypeDirectory,
-					})
+			rel := f.Path[len(args.Path) : len(f.Path)-1]
+			key := ""
+			for j, v := range rel {
+				key = dirKey(key, v)
+				if _, ok := seen[key]; ok {
+					continue
 				}
+				seen[key] = struct{}{}
+				count++
+				if pageFull() {
+					continue
+				}
+				fp := make([]string, 0, len(args.Path)+j+1)
+				fp = append(fp, args.Path...)
+				fp = append(fp, rel[:j+1]...)
+				fps := "/" + strings.Join(fp, "/")
+				items = append(items, ListItem{
+					ID:      fmt.Sprintf("%x", sha1.Sum([]byte(fps))),
+					Name:    v,
+					Size:    dirSizes[key],
+					PathStr: fps,
+					Path:    fp,
+					Type:    ListTypeDirectory,
+				})
 			}
 		}
 		size += f.Size
+		count++
+		if pageFull() {
+			continue
+		}
 		items = append(items, s.buildFile(f, i))
 	}
 
 	// Sort items with folders first, then by selected criteria
 	s.sortItems(items, args.Sort)
-
-	count := len(items)
 
 	// Apply pagination after sorting
 	if args.Offset > 0 || (args.Limit != 0 && args.Offset+args.Limit < len(items)) {
