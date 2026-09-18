@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"crypto/sha1"
 	"fmt"
 	"mime"
@@ -35,6 +36,19 @@ type ListGetArgs struct {
 	Output ListOutputType
 	Path   []string
 	Sort   ListSortType
+	// Ctx, when set, is polled while walking the files so a client that
+	// gave up (web-ui aborts /list after 10 s) does not keep the build
+	// running to completion. 2026-09-18: ~50 orphaned 84 s builds per pod
+	// took all three rest-api replicas down.
+	Ctx context.Context
+}
+
+// walkCancelled reports whether the caller's context is done; checked every
+// walkCheckEvery files so the poll itself costs nothing on small torrents.
+const walkCheckEvery = 4096
+
+func walkCancelled(args *ListGetArgs, i int) bool {
+	return args.Ctx != nil && i%walkCheckEvery == 0 && args.Ctx.Err() != nil
 }
 
 type ParamGetter interface {
@@ -186,6 +200,9 @@ func (s *List) buildList(r *Resource, args *ListGetArgs) ListResponse {
 	// O(1) per check; dirs are emitted in first-seen order.
 	seen := map[string]struct{}{}
 	for i, f := range r.Files {
+		if walkCancelled(args, i) {
+			break
+		}
 		if !pathBeginsWith(f.Path, args.Path) {
 			continue
 		}
@@ -304,6 +321,9 @@ func (s *List) buildTree(r *Resource, args *ListGetArgs) ListResponse {
 	var size int64
 	var dir *ListItem
 	for i, f := range r.Files {
+		if walkCancelled(args, i) {
+			break
+		}
 		if !pathBeginsWith(f.Path, args.Path) {
 			continue
 		}
@@ -363,8 +383,65 @@ func (s *List) buildTree(r *Resource, args *ListGetArgs) ListResponse {
 }
 
 func (s *List) Get(r *Resource, args *ListGetArgs) (ListResponse, error) {
+	var res ListResponse
 	if args.Output == ListOutputTypeList {
-		return s.buildList(r, args), nil
+		res = s.buildList(r, args)
+	} else {
+		res = s.buildTree(r, args)
 	}
-	return s.buildTree(r, args), nil
+	if args.Ctx != nil && args.Ctx.Err() != nil {
+		return ListResponse{}, errors.Wrap(args.Ctx.Err(), "list cancelled")
+	}
+	return res, nil
+}
+
+// FindByID returns the /list item — a file, a directory or the root — whose
+// ID (sha1 of its absolute path) is id, without materialising the listing.
+// /export resolved a content_id by building the whole list first: 200k
+// items and 130 MiB retained to pick one. Files are hashed as they are
+// walked; a directory's size is summed only for the one that matches.
+func (s *List) FindByID(r *Resource, id string) (*ListItem, bool) {
+	root := s.buildRootItem([]string{}, 0)
+	if root.ID == id {
+		for _, f := range r.Files {
+			root.Size += f.Size
+		}
+		return &root, true
+	}
+	seen := map[string]struct{}{}
+	for i, f := range r.Files {
+		fps := "/" + strings.Join(f.Path, "/")
+		if fmt.Sprintf("%x", sha1.Sum([]byte(fps))) == id {
+			it := s.buildFile(f, i)
+			return &it, true
+		}
+		key := ""
+		for j := 0; j < len(f.Path)-1; j++ {
+			key = dirKey(key, f.Path[j])
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			dps := "/" + key
+			if fmt.Sprintf("%x", sha1.Sum([]byte(dps))) != id {
+				continue
+			}
+			fp := f.Path[:j+1]
+			var size int64
+			for _, g := range r.Files {
+				if pathBeginsWith(g.Path, fp) {
+					size += g.Size
+				}
+			}
+			return &ListItem{
+				ID:      id,
+				Name:    f.Path[j],
+				Size:    size,
+				PathStr: dps,
+				Path:    fp,
+				Type:    ListTypeDirectory,
+			}, true
+		}
+	}
+	return nil, false
 }
