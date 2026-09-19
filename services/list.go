@@ -178,7 +178,11 @@ func (s *List) buildList(r *Resource, args *ListGetArgs) ListResponse {
 	// compare against.
 	dirSizes := map[string]int64{}
 	for _, f := range r.Files {
-		if !pathBeginsWith(f.Path, args.Path) {
+		// A file whose path IS args.Path (a single-file torrent opened by
+		// its file path, a file page) has no directory below the listed
+		// path; slicing [n:n-1] here panicked every such /list for 19 hours
+		// after 45c808f (2026-09-18, ~19k silent 500s a day).
+		if !pathBeginsWith(f.Path, args.Path) || len(f.Path) <= len(args.Path) {
 			continue
 		}
 		key := ""
@@ -328,7 +332,9 @@ func (s *List) buildTree(r *Resource, args *ListGetArgs) ListResponse {
 			continue
 		}
 		size += f.Size
-		if len(args.Path)+1 == len(f.Path) {
+		// len(f.Path) == len(args.Path): the listed path is this file (the
+		// same case as in buildList) — it is the one item, not a directory.
+		if len(f.Path) <= len(args.Path)+1 {
 			if dir != nil {
 				items = append(items, *dir)
 				dir = nil
