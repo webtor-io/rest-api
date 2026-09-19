@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"runtime/debug"
 	"strconv"
 	"strings"
 
@@ -323,6 +324,23 @@ func (s *Web) getExport(g *gin.Context) {
 	g.PureJSON(http.StatusOK, res)
 }
 
+// recoverToLog is the panic recovery for the router. gin.Default's recovery
+// writes to stderr only, outside logrus: the 2026-09-18 /list panic answered
+// ~19k empty 500s a day for 19 hours while rest-api's own error count (the
+// one the monitoring reads) went DOWN, and the fault was found from the
+// consumer's side. A panic is an error like any other and is logged as one,
+// with the request that triggered it and the stack.
+func recoverToLog(c *gin.Context, recovered any) {
+	log.WithFields(log.Fields{
+		"method": c.Request.Method,
+		"path":   c.Request.URL.Path,
+		"query":  c.Request.URL.RawQuery,
+		"panic":  fmt.Sprint(recovered),
+		"stack":  string(debug.Stack()),
+	}).Error("panic recovered")
+	c.AbortWithStatus(http.StatusInternalServerError)
+}
+
 func (s *Web) errorHandler(c *gin.Context) {
 	c.Next()
 	if len(c.Errors) == 0 {
@@ -357,7 +375,8 @@ func (s *Web) Serve() error {
 	if err != nil {
 		return errors.Wrap(err, "Failed to web listen to tcp connection")
 	}
-	r := gin.Default()
+	r := gin.New()
+	r.Use(gin.Logger(), gin.CustomRecovery(recoverToLog))
 	r.UseRawPath = true
 	r.Use(s.errorHandler)
 	rg := r.Group("/resource")
