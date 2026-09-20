@@ -143,7 +143,7 @@ func (s *ResourceMap) parseTorrent(b []byte) (*Resource, error) {
 			path = f.PathUtf8
 		}
 		r.Files = append(r.Files, &File{
-			Path:   append([]string{name}, path...),
+			Path:   append([]string{name}, dropEmptyComponents(path)...),
 			Size:   f.Length,
 			Pieces: pieces[start : end+1],
 		})
@@ -152,6 +152,24 @@ func (s *ResourceMap) parseTorrent(b []byte) (*Resource, error) {
 	r.MagnetURI = mi.Magnet(nil, &i).String()
 	r.Torrent = b
 	return r, nil
+}
+
+// dropEmptyComponents removes empty path components from a torrent file
+// path. BEP 3 forbids them, but torrents with ("Name", "", "04c.mp3") exist
+// ("Isabel Wilkerson - The Warmth of Other Suns", 2026-09-20): kept as is,
+// the empty component became a directory with no name that the listing
+// could not show or link, the archive asked the proxy for "Name//04c.mp3"
+// and got 502s, and the torrent looked dead. Dropping the component gives
+// the file the path every client already sends ("Name/04c.mp3"); the
+// seeder matches paths after cleaning since 17d9bf1, so it resolves.
+func dropEmptyComponents(path []string) []string {
+	out := make([]string, 0, len(path))
+	for _, c := range path {
+		if c != "" {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 func (s *ResourceMap) parse(b []byte) (*Resource, error) {
