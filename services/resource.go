@@ -365,7 +365,9 @@ func (s *ResourceMap) getManifest(ctx context.Context, infohash string) (*Resour
 	}
 	for _, f := range rep.GetFiles() {
 		r.Files = append(r.Files, &File{
-			Path: f.GetPath(),
+			// Same normalisation as parseTorrent: the manifest is the path
+			// every listing takes, so an empty component must go here too.
+			Path: dropEmptyComponents(f.GetPath()),
 			Size: f.GetLength(),
 		})
 	}
