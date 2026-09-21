@@ -41,6 +41,26 @@ type File struct {
 	Path   []string
 	Size   int64
 	Pieces []Hash
+	// Pad marks a BEP 47 padding file: filler the encoder inserted so the
+	// next real file starts on a piece boundary. It stays in Files so the
+	// index of every file after it (ListItem.Index, /export/<idx>, the
+	// Stremio Library's persisted file_idx) is unchanged, but listings and
+	// sizes leave it out — it is not content.
+	Pad bool
+}
+
+// isPadFile reports whether a torrent file is BEP 47 padding: the "p"
+// attribute when the encoder set one, else the conventional names —
+// ".pad/<length>" (libtorrent, qBittorrent) and "_____padding_file_N_..."
+// (BitComet). rel is the path relative to the torrent name.
+func isPadFile(attr string, rel []string) bool {
+	if strings.Contains(attr, "p") {
+		return true
+	}
+	if len(rel) == 0 {
+		return false
+	}
+	return rel[0] == ".pad" || strings.HasPrefix(rel[len(rel)-1], "_____padding_file")
 }
 
 const (
@@ -135,19 +155,21 @@ func (s *ResourceMap) parseTorrent(b []byte) (*Resource, error) {
 	}
 	pieces := splitPieces(i.Pieces)
 
-	offset := int64(0)
 	for _, f := range i.UpvertedFiles() {
-		start, end := offset/i.PieceLength, (offset+f.Length)/i.PieceLength
+		// TorrentOffset, not a running sum: v2/hybrid torrents align files
+		// to piece boundaries, so the sum drifts after the first file.
+		start, end := f.TorrentOffset/i.PieceLength, (f.TorrentOffset+f.Length)/i.PieceLength
 		path := f.Path
 		if len(f.PathUtf8) > 0 {
 			path = f.PathUtf8
 		}
+		rel := dropEmptyComponents(path)
 		r.Files = append(r.Files, &File{
-			Path:   append([]string{name}, dropEmptyComponents(path)...),
+			Path:   append([]string{name}, rel...),
 			Size:   f.Length,
-			Pieces: pieces[start : end+1],
+			Pieces: pieces[start:min(end+1, int64(len(pieces)))],
+			Pad:    isPadFile(f.Attr, rel),
 		})
-		offset += f.Length
 	}
 	r.MagnetURI = mi.Magnet(nil, &i).String()
 	r.Torrent = b
@@ -364,11 +386,17 @@ func (s *ResourceMap) getManifest(ctx context.Context, infohash string) (*Resour
 		Type: ResourceTypeSha1,
 	}
 	for _, f := range rep.GetFiles() {
+		// Same normalisation as parseTorrent: the manifest is the path
+		// every listing takes, so an empty component must go here too.
+		p := dropEmptyComponents(f.GetPath())
+		var rel []string
+		if len(p) > 1 {
+			rel = p[1:] // the manifest carries no attrs; names must do
+		}
 		r.Files = append(r.Files, &File{
-			// Same normalisation as parseTorrent: the manifest is the path
-			// every listing takes, so an empty component must go here too.
-			Path: dropEmptyComponents(f.GetPath()),
+			Path: p,
 			Size: f.GetLength(),
+			Pad:  isPadFile("", rel),
 		})
 	}
 	return r, nil

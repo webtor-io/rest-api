@@ -182,7 +182,7 @@ func (s *List) buildList(r *Resource, args *ListGetArgs) ListResponse {
 		// its file path, a file page) has no directory below the listed
 		// path; slicing [n:n-1] here panicked every such /list for 19 hours
 		// after 45c808f (2026-09-18, ~19k silent 500s a day).
-		if !pathBeginsWith(f.Path, args.Path) || len(f.Path) <= len(args.Path) {
+		if f.Pad || !pathBeginsWith(f.Path, args.Path) || len(f.Path) <= len(args.Path) {
 			continue
 		}
 		key := ""
@@ -207,7 +207,9 @@ func (s *List) buildList(r *Resource, args *ListGetArgs) ListResponse {
 		if walkCancelled(args, i) {
 			break
 		}
-		if !pathBeginsWith(f.Path, args.Path) {
+		// Padding is skipped, not removed: i still counts it, so Index
+		// stays the torrent's own file index.
+		if f.Pad || !pathBeginsWith(f.Path, args.Path) {
 			continue
 		}
 		if len(f.Path) > len(args.Path) {
@@ -328,7 +330,7 @@ func (s *List) buildTree(r *Resource, args *ListGetArgs) ListResponse {
 		if walkCancelled(args, i) {
 			break
 		}
-		if !pathBeginsWith(f.Path, args.Path) {
+		if f.Pad || !pathBeginsWith(f.Path, args.Path) {
 			continue
 		}
 		size += f.Size
@@ -410,12 +412,17 @@ func (s *List) FindByID(r *Resource, id string) (*ListItem, bool) {
 	root := s.buildRootItem([]string{}, 0)
 	if root.ID == id {
 		for _, f := range r.Files {
-			root.Size += f.Size
+			if !f.Pad {
+				root.Size += f.Size
+			}
 		}
 		return &root, true
 	}
 	seen := map[string]struct{}{}
 	for i, f := range r.Files {
+		if f.Pad {
+			continue
+		}
 		fps := "/" + strings.Join(f.Path, "/")
 		if fmt.Sprintf("%x", sha1.Sum([]byte(fps))) == id {
 			it := s.buildFile(f, i)
@@ -435,7 +442,7 @@ func (s *List) FindByID(r *Resource, id string) (*ListItem, bool) {
 			fp := f.Path[:j+1]
 			var size int64
 			for _, g := range r.Files {
-				if pathBeginsWith(g.Path, fp) {
+				if !g.Pad && pathBeginsWith(g.Path, fp) {
 					size += g.Size
 				}
 			}
