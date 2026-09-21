@@ -47,6 +47,10 @@ func RegisterCacheMapFlags(f []cli.Flag) []cli.Flag {
 	)
 }
 
+// cacheProbeMethod names the ?done=true probe in the upstream metrics; the
+// HTTP verb would say nothing about what was asked.
+const cacheProbeMethod = "CacheProbe"
+
 type CacheMap struct {
 	*lazymap.LazyMap[bool]
 	cl                          *http.Client
@@ -93,7 +97,9 @@ func (s *CacheMap) Get(u *MyURL) (bool, error) {
 		if err != nil {
 			return false, err
 		}
+		start := time.Now()
 		res, err := s.cl.Do(req)
+		observeUpstream(upstreamTorrentHTTPProxy, cacheProbeMethod, httpOutcome(res, err), start)
 		if err != nil {
 			// A dead upstream (edge proxy down, seeder still cold-starting
 			// past the deadline) must not turn a URL-minting endpoint into a

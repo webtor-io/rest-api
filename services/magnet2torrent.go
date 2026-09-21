@@ -57,6 +57,7 @@ func (s *Magnet2Torrent) get() (m2t.Magnet2TorrentClient, error) {
 	addr := fmt.Sprintf("%s:%d", s.host, s.port)
 	conn, err := grpc.NewClient(addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(upstreamUnaryInterceptor(upstreamMagnet2Torrent)),
 		grpc.WithDefaultCallOptions(
 			grpc.MaxCallRecvMsgSize(magnet2torrentMaxMsgSize),
 			grpc.MaxCallSendMsgSize(magnet2torrentMaxMsgSize),

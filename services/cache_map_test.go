@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/webtor-io/lazymap"
 )
@@ -75,6 +76,10 @@ func TestCacheMapGetReportsUpstreamStatus(t *testing.T) {
 
 	cm := newTestCacheMap(srv.Client(), 5*time.Second)
 
+	okc := upstreamRequestsTotal.WithLabelValues(upstreamTorrentHTTPProxy, cacheProbeMethod, outcomeOK)
+	nfc := upstreamRequestsTotal.WithLabelValues(upstreamTorrentHTTPProxy, cacheProbeMethod, outcomeNotFound)
+	beforeOK, beforeNF := testutil.ToFloat64(okc), testutil.ToFloat64(nfc)
+
 	cached, err := cm.Get(testCacheMapURL(t, srv.URL, "/done"))
 	assert.Nil(err)
 	assert.True(cached)
@@ -83,4 +88,9 @@ func TestCacheMapGetReportsUpstreamStatus(t *testing.T) {
 	cached, err = cm.Get(testCacheMapURL(t, srv.URL, "/partial"))
 	assert.Nil(err)
 	assert.False(cached)
+
+	// Each probe that reached the upstream is one upstream call, with the
+	// outcome taken from the status the seeder answered.
+	assert.EqualValues(1, testutil.ToFloat64(okc)-beforeOK)
+	assert.EqualValues(1, testutil.ToFloat64(nfc)-beforeNF)
 }

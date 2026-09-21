@@ -24,6 +24,7 @@ func makeServeCMD() cli.Command {
 
 func configureServe(c *cli.Command) {
 	c.Flags = cs.RegisterProbeFlags(c.Flags)
+	c.Flags = cs.RegisterPromFlags(c.Flags)
 	c.Flags = cs.RegisterPprofFlags(c.Flags)
 	c.Flags = s.RegisterWebFlags(c.Flags)
 	c.Flags = s.RegisterTorrentStoreFlags(c.Flags)
@@ -43,6 +44,13 @@ func serve(c *cli.Context) error {
 	if probe != nil {
 		services = append(services, probe)
 		defer probe.Close()
+	}
+
+	// Setting Prom
+	prom := cs.NewProm(c)
+	if prom != nil {
+		services = append(services, prom)
+		defer prom.Close()
 	}
 
 	// Setting PPROF

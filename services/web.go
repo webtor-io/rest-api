@@ -338,7 +338,18 @@ func recoverToLog(c *gin.Context, recovered any) {
 		"panic":  fmt.Sprint(recovered),
 		"stack":  string(debug.Stack()),
 	}).Error("panic recovered")
+	panicsTotal.WithLabelValues(routeLabel(c)).Inc()
 	c.AbortWithStatus(http.StatusInternalServerError)
+}
+
+// newRouter is the middleware stack without routes, shared with tests so the
+// ordering they exercise is the one production runs: metrics wrap recovery
+// (see httpMetrics for why), the error handler sits inside both.
+func newRouter() *gin.Engine {
+	r := gin.New()
+	r.Use(gin.Logger(), httpMetrics(), gin.CustomRecovery(recoverToLog))
+	r.UseRawPath = true
+	return r
 }
 
 func (s *Web) errorHandler(c *gin.Context) {
@@ -375,9 +386,7 @@ func (s *Web) Serve() error {
 	if err != nil {
 		return errors.Wrap(err, "Failed to web listen to tcp connection")
 	}
-	r := gin.New()
-	r.Use(gin.Logger(), gin.CustomRecovery(recoverToLog))
-	r.UseRawPath = true
+	r := newRouter()
 	r.Use(s.errorHandler)
 	rg := r.Group("/resource")
 	{

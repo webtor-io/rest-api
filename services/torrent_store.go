@@ -57,6 +57,7 @@ func (s *TorrentStore) get() (ts.TorrentStoreClient, error) {
 	addr := fmt.Sprintf("%s:%d", s.host, s.port)
 	conn, err := grpc.NewClient(addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(upstreamUnaryInterceptor(upstreamTorrentStore)),
 		grpc.WithDefaultCallOptions(
 			grpc.MaxCallRecvMsgSize(torrentStoreMaxMsgSize),
 			grpc.MaxCallSendMsgSize(torrentStoreMaxMsgSize),
