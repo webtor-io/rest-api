@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -83,7 +84,7 @@ func (s *CacheMap) Get(u *MyURL) (bool, error) {
 		defer cacheCancel()
 		i, err := url.Parse(u.String())
 		if err != nil {
-			return false, err
+			return false, withoutURL(err)
 		}
 		if s.useInternalTorrentHTTPProxy {
 			internal := fmt.Sprintf("%v:%v", s.torrentHTTPProxyHost, s.torrentHTTPProxyPort)
@@ -95,7 +96,7 @@ func (s *CacheMap) Get(u *MyURL) (bool, error) {
 		i.RawQuery = q.Encode()
 		req, err := http.NewRequestWithContext(cacheCtx, "GET", i.String(), nil)
 		if err != nil {
-			return false, err
+			return false, withoutURL(err)
 		}
 		start := time.Now()
 		res, err := s.cl.Do(req)
@@ -108,7 +109,7 @@ func (s *CacheMap) Get(u *MyURL) (bool, error) {
 			// any useful definition anyway. Memoizing the negative for the
 			// map's TTL also keeps a flapping upstream from being re-probed
 			// on every request.
-			log.WithError(err).Warnf("failed to probe cache state for %v", u.Path)
+			log.WithError(withoutURL(err)).Warnf("failed to probe cache state for %v", u.Path)
 			return false, nil
 		}
 		defer func(Body io.ReadCloser) {
@@ -116,4 +117,15 @@ func (s *CacheMap) Get(u *MyURL) (bool, error) {
 		}(res.Body)
 		return res.StatusCode == http.StatusOK, nil
 	})
+}
+
+// withoutURL drops the URL a *url.Error quotes: here it is the caller's
+// export URL, api-key and token included, and it went to the log (and the
+// error response) whole. What went wrong is in the inner error.
+func withoutURL(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return fmt.Errorf("%s: %w", ue.Op, ue.Err)
+	}
+	return err
 }

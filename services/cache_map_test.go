@@ -1,13 +1,17 @@
 package services
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/webtor-io/lazymap"
 )
@@ -93,4 +97,26 @@ func TestCacheMapGetReportsUpstreamStatus(t *testing.T) {
 	// outcome taken from the status the seeder answered.
 	assert.EqualValues(1, testutil.ToFloat64(okc)-beforeOK)
 	assert.EqualValues(1, testutil.ToFloat64(nfc)-beforeNF)
+}
+
+// The probe URL is the caller's export URL: a failed probe must not log its
+// api-key and token.
+func TestCacheMapGetLogsNoCredentials(t *testing.T) {
+	dead := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	deadCl, deadURL := dead.Client(), dead.URL
+	dead.Close()
+
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+
+	u := testCacheMapURL(t, deadURL, "/h/file.mkv")
+	u.RawQuery = "api-key=APIKEY1&token=TOKEN1"
+	cm := newTestCacheMap(deadCl, time.Second)
+	if _, err := cm.Get(u); err != nil {
+		t.Fatal(err)
+	}
+	if out := buf.String(); !strings.Contains(out, "failed to probe cache state") || strings.Contains(out, "APIKEY1") || strings.Contains(out, "TOKEN1") {
+		t.Errorf("probe failure log must carry no credentials, got %q", out)
+	}
 }
