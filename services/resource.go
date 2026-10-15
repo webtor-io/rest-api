@@ -127,6 +127,10 @@ func (s *ResourceMap) parseMagnet(b []byte) (*Resource, error) {
 	if err != nil {
 		return nil, err
 	}
+	// An all-zero infohash parses, then panics magnet2torrent.
+	if ma.InfoHash.IsZero() {
+		return nil, errors.New("zero infohash")
+	}
 	return &Resource{
 		ID:   ma.InfoHash.HexString(),
 		Type: ResourceTypeMagnet,
@@ -247,7 +251,7 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 		defer pullCancel()
 		rep, err := ts.Pull(pullCtx, &tsp.PullRequest{InfoHash: r.ID})
 		if err != nil {
-			return nil, err
+			return nil, forbidden(err)
 		}
 		return s.parseTorrent(rep.GetTorrent())
 
@@ -258,7 +262,7 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 		pushCtx, pushCancel := context.WithTimeout(ctx, s.torrentStoreTimeout)
 		defer pushCancel()
 		if _, err := ts.Push(pushCtx, &tsp.PushRequest{Torrent: b}); err != nil {
-			return nil, err
+			return nil, forbidden(err)
 		}
 		return r, nil
 
@@ -268,7 +272,7 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 			defer pullCancel()
 			rep, err := ts.Pull(pullCtx, &tsp.PullRequest{InfoHash: r.ID})
 			if err != nil {
-				return nil, err
+				return nil, forbidden(err)
 			}
 			// Even when the torrent is already cached, push any tr= trackers
 			// from the incoming magnet so torrent-store can merge them in.
@@ -299,11 +303,20 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 		}
 		_, err = ts.Push(ctx, &tsp.PushRequest{Torrent: payload})
 		if err != nil {
-			return nil, err
+			return nil, forbidden(err)
 		}
 		return s.parseTorrent(payload)
 	}
 	return nil, nil
+}
+
+// forbidden marks a refusal from torrent-store (stoplist, abuse ban) the way
+// the Touch path does, so the web error handler answers 403 instead of 500.
+func forbidden(err error) error {
+	if status.Code(err) == gcodes.PermissionDenied {
+		return errors.Wrap(err, "forbidden")
+	}
+	return err
 }
 
 // magnetTrackerTorrent builds a synthetic torrent that carries the
