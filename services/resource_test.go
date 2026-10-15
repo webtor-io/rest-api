@@ -1,8 +1,11 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
@@ -224,4 +227,63 @@ func TestResourceMap_magnetTimeout(t *testing.T) {
 	assert.ErrorContains(err, "magnet timeout")
 	tsclmm.AssertExpectations(t)
 	m2tclmm.AssertExpectations(t)
+}
+
+// What POST /resource answers when torrent-store refuses (stoplist, abuse
+// ban) on a call other than Touch, and for a magnet whose infohash is all
+// zeros. The refusals used to surface as a bare 500; the zero infohash went on
+// to magnet2torrent and panicked it.
+func TestPostResourceStatus(t *testing.T) {
+	denied := status.Error(codes.PermissionDenied, "found in stoplist infoHash=x")
+	notFound := status.Error(codes.NotFound, "not found")
+	any3 := []any{mock.Anything, mock.Anything, mock.Anything}
+	for _, tc := range []struct {
+		name  string
+		body  string
+		setup func(ts *TorrentStoreClientMock, m2t *Magnet2TorrentClientMock)
+		want  int
+	}{
+		{"magnet resolved, refused at push", sintelMagnet, func(ts *TorrentStoreClientMock, m2t *Magnet2TorrentClientMock) {
+			ts.On("Touch", any3...).Return(nil, notFound)
+			m2t.On("Magnet2Torrent", any3...).Return(&m2tp.Magnet2TorrentReply{Torrent: loadSintel(t)}, nil)
+			ts.On("Push", any3...).Return(nil, denied)
+		}, http.StatusForbidden},
+		{"uploaded torrent refused at push", string(loadSintel(t)), func(ts *TorrentStoreClientMock, _ *Magnet2TorrentClientMock) {
+			ts.On("Touch", any3...).Return(nil, notFound)
+			ts.On("Push", any3...).Return(nil, denied)
+		}, http.StatusForbidden},
+		{"stored magnet refused at pull", sintelMagnet, func(ts *TorrentStoreClientMock, _ *Magnet2TorrentClientMock) {
+			ts.On("Touch", any3...).Return(nil, nil)
+			ts.On("Pull", any3...).Return(nil, denied)
+		}, http.StatusForbidden},
+		{"sha1 refused at pull", "08ada5a7a6183aae1e09d831df6748d566095a10", func(ts *TorrentStoreClientMock, _ *Magnet2TorrentClientMock) {
+			ts.On("Touch", any3...).Return(nil, nil)
+			ts.On("Pull", any3...).Return(nil, denied)
+		}, http.StatusForbidden},
+		// No mock is set: reaching torrent-store or magnet2torrent fails the case.
+		{"zero infohash", "magnet:?xt=urn:btih:0000000000000000000000000000000000000000", nil, http.StatusBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rm := NewTestResourceMap()
+			tscl, _ := rm.ts.Get()
+			m2tcl, _ := rm.m2t.Get()
+			ts, m2t := tscl.(*TorrentStoreClientMock), m2tcl.(*Magnet2TorrentClientMock)
+			if tc.setup != nil {
+				tc.setup(ts, m2t)
+			}
+			w := &Web{rm: rm}
+			r := newRouter()
+			r.Use(w.errorHandler)
+			r.POST("/resource/", w.postResource)
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/resource/", bytes.NewReader([]byte(tc.body))))
+			assert.Equal(t, tc.want, rec.Code, rec.Body.String())
+			if tc.want == http.StatusBadRequest {
+				// web-ui reads this text as "the link is invalid", not "dead".
+				assert.Contains(t, rec.Body.String(), "failed to parse magnet")
+			}
+			ts.AssertExpectations(t)
+			m2t.AssertExpectations(t)
+		})
+	}
 }
