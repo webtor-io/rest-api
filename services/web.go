@@ -18,6 +18,7 @@ import (
 
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
+	"github.com/webtor-io/lazymap"
 	"github.com/webtor-io/rest-api/docs"
 )
 
@@ -331,15 +332,22 @@ func (s *Web) getExport(g *gin.Context) {
 // consumer's side. A panic is an error like any other and is logged as one,
 // with the request that triggered it and the stack.
 func recoverToLog(c *gin.Context, recovered any) {
+	logPanic(c, recovered, debug.Stack())
+	c.AbortWithStatus(http.StatusInternalServerError)
+}
+
+// logPanic reports a panic to logrus and to panics_total (RestAPIPanics
+// reads it). A panic in a lazymap loader never reaches recoverToLog: lazymap
+// returns it as a *lazymap.PanicError, and errorHandler reports it here.
+func logPanic(c *gin.Context, value any, stack []byte) {
 	log.WithFields(log.Fields{
 		"method": c.Request.Method,
 		"path":   c.Request.URL.Path,
 		"query":  c.Request.URL.RawQuery,
-		"panic":  fmt.Sprint(recovered),
-		"stack":  string(debug.Stack()),
+		"panic":  fmt.Sprint(value),
+		"stack":  string(stack),
 	}).Error("panic recovered")
 	panicsTotal.WithLabelValues(routeLabel(c)).Inc()
-	c.AbortWithStatus(http.StatusInternalServerError)
 }
 
 // newRouter is the middleware stack without routes, shared with tests so the
@@ -358,6 +366,15 @@ func (s *Web) errorHandler(c *gin.Context) {
 		return
 	}
 	err := c.Errors[0]
+	var pe *lazymap.PanicError
+	if errors.As(err.Err, &pe) {
+		// A bug, whatever its text says: a panic value containing "not
+		// found" must not become a 404, and neither it nor the stack goes
+		// to the client.
+		logPanic(c, pe.Value, pe.Stack)
+		c.PureJSON(http.StatusInternalServerError, &ErrorResponse{Error: http.StatusText(http.StatusInternalServerError)})
+		return
+	}
 	log.Error(err)
 
 	status := http.StatusInternalServerError

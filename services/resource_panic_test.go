@@ -1,10 +1,14 @@
 package services
 
 import (
+	"bytes"
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -61,4 +65,42 @@ func TestResourceMap_loaderPanicIsAnErrorAndKeyRetries(t *testing.T) {
 	require.Nil(t, second.panicked, "the loader's panic escaped Get")
 	require.NoError(t, second.err)
 	assertSintel(t, second.r)
+}
+
+// A loader panic reaches errorHandler as an error, not through recovery. It
+// is answered 500 whatever its text says ("not found" would be a 404 by the
+// keyword match), with no panic value or stack in the body, and is logged
+// and counted as a panic like the ones recovery catches.
+func TestErrorHandler_loaderPanicIs500AndLogged(t *testing.T) {
+	hook := test.NewGlobal()
+	defer hook.Reset()
+	rm := NewTestResourceMap()
+	tscl, _ := rm.ts.Get()
+	ts := tscl.(*TorrentStoreClientMock)
+	const value = "torrent not found: secret-value"
+	ts.On("Touch", mock.Anything, mock.Anything, mock.Anything).Panic(value)
+
+	w := &Web{rm: rm}
+	r := newRouter()
+	r.Use(w.errorHandler)
+	r.POST("/resource/", w.postResource)
+	panics := panicsTotal.WithLabelValues("/resource/")
+	before := counter(t, panics)
+
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/resource/", bytes.NewReader([]byte("08ada5a7a6183aae1e09d831df6748d566095a10"))))
+
+	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	assert.JSONEq(t, `{"error":"Internal Server Error"}`, rec.Body.String())
+	assert.Equal(t, 1.0, counter(t, panics)-before, "panics_total{/resource/} delta")
+	var logged bool
+	for _, e := range hook.AllEntries() {
+		if e.Message == "panic recovered" {
+			logged = true
+			assert.Equal(t, value, e.Data["panic"])
+			assert.Contains(t, e.Data["stack"], "goroutine ")
+			assert.Equal(t, "/resource/", e.Data["path"])
+		}
+	}
+	assert.True(t, logged, "no 'panic recovered' log entry")
 }
