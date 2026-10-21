@@ -497,8 +497,8 @@ github.com/vmihailenco/tagparser/v2 v2.0.0 h1:y09buUbR+b5aycVFQs/g70pqKVZNBmxwAh
 github.com/vmihailenco/tagparser/v2 v2.0.0/go.mod h1:Wri+At7QHww0WTrCBeu4J6bNtoV6mEfg5OIWRZA9qds=
 github.com/webtor-io/common-services v0.0.0-20250112153432-554128b56bd5 h1:EGVq16o1t8LO2HR2eGh4YEJjLF9Np2bBgJxHkUr+fb4=
 github.com/webtor-io/common-services v0.0.0-20250112153432-554128b56bd5/go.mod h1:6jUeO6R+ytZnEJj7PlcLEQZfWaxw8ovav73BP83MTlI=
-github.com/webtor-io/lazymap v0.0.0-20251112155450-24fcf0ad4b5d h1:Mm6O+OWvNC52H9+/A9IBxlD8hu9WCKlY17k8jUn6M9o=
-github.com/webtor-io/lazymap v0.0.0-20251112155450-24fcf0ad4b5d/go.mod h1:noIeMCqd9BmJsPsyDt/fYcyvFpdQ+7LnvQKtISl7kMk=
+github.com/webtor-io/lazymap v0.0.0-20261021184726-55fd9cba3e7a h1:LmYfSO3oVs630vYUK3TurHR/an1VjPXGPuc3LJG6VoI=
+github.com/webtor-io/lazymap v0.0.0-20261021184726-55fd9cba3e7a/go.mod h1:noIeMCqd9BmJsPsyDt/fYcyvFpdQ+7LnvQKtISl7kMk=
 github.com/webtor-io/magnet2torrent v0.0.0-20220312143110-bc1a7e4bcbba h1:OyPsU+YnNo0h22PfqfQHtkBTO9vKllKgy94RzF/Ga3c=
 github.com/webtor-io/magnet2torrent v0.0.0-20220312143110-bc1a7e4bcbba/go.mod h1:2cBSuVh1bLCrVUUy5TxEZj+Msuzz127kEt5XfeX/F3s=
 github.com/webtor-io/torrent-store v1.0.1-0.20260614135143-50f5d91eee6b h1:jmEAhWEzU9RDKsOh2r7qdRvwOm8ZkTDe/9WnbaxIHb8=
