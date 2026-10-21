@@ -325,7 +325,11 @@ func (s *List) buildFile(f *File, idx int) ListItem {
 func (s *List) buildTree(r *Resource, args *ListGetArgs) ListResponse {
 	items := []ListItem{}
 	var size int64
-	var dir *ListItem
+	// Directory items by path, emitted in first-seen order. A directory's
+	// files need not be adjacent: a series pack ordered by file size
+	// interleaves its seasons, and merging only adjacent runs listed one
+	// "Season 1" per file (support c5bd5264, 2026-10-21).
+	dirs := map[string]int{}
 	for i, f := range r.Files {
 		if walkCancelled(args, i) {
 			break
@@ -337,32 +341,23 @@ func (s *List) buildTree(r *Resource, args *ListGetArgs) ListResponse {
 		// len(f.Path) == len(args.Path): the listed path is this file (the
 		// same case as in buildList) — it is the one item, not a directory.
 		if len(f.Path) <= len(args.Path)+1 {
-			if dir != nil {
-				items = append(items, *dir)
-				dir = nil
-			}
 			items = append(items, s.buildFile(f, i))
-		} else {
-			fps := "/" + strings.Join(f.Path[0:len(args.Path)+1], "/")
-			if dir != nil && dir.PathStr != fps {
-				items = append(items, *dir)
-				dir = nil
-			}
-			if dir == nil {
-				dir = &ListItem{
-					ID:      fmt.Sprintf("%x", sha1.Sum([]byte(fps))),
-					Name:    f.Path[len(args.Path)],
-					PathStr: fps,
-					Path:    f.Path[0 : len(args.Path)+1],
-					Type:    ListTypeDirectory,
-				}
-			}
-			dir.Size += f.Size
+			continue
 		}
-	}
-	if dir != nil {
-		items = append(items, *dir)
-		dir = nil
+		fps := "/" + strings.Join(f.Path[0:len(args.Path)+1], "/")
+		n, ok := dirs[fps]
+		if !ok {
+			n = len(items)
+			dirs[fps] = n
+			items = append(items, ListItem{
+				ID:      fmt.Sprintf("%x", sha1.Sum([]byte(fps))),
+				Name:    f.Path[len(args.Path)],
+				PathStr: fps,
+				Path:    f.Path[0 : len(args.Path)+1],
+				Type:    ListTypeDirectory,
+			})
+		}
+		items[n].Size += f.Size
 	}
 
 	// Sort items with folders first, then by selected criteria
