@@ -257,13 +257,12 @@ func (s *Web) getList(g *gin.Context) {
 // @Param types query string false "comma-separated list of export types to generate; allowed values: download, stream, torrent_client_stat, subtitles, media_probe; if omitted or empty, all types are exported; an unknown value yields 400" example("download,stream")
 // @Param api-key query string false "API key embedded into the generated export URLs; falls back to X-Api-Key header, then to the server-configured key"
 // @Param X-Api-Key header string false "API key embedded into the generated export URLs (used if api-key query parameter is absent)"
-// @Param token query string false "JWT embedded into the generated export URLs; falls back to X-Token header; if neither is provided, the server signs its own token with the configured role; the token's role claim selects the premium domain and download subdomains"
+// @Param token query string false "JWT embedded into the generated export URLs; falls back to X-Token header; if neither is provided, the server signs its own token with the configured role; the token's role claim selects the download subdomains"
 // @Param X-Token header string false "JWT embedded into the generated export URLs (used if token query parameter is absent)"
 // @Param user-id query string false "opaque user identifier propagated into the generated export URLs; falls back to X-User-Id header"
 // @Param X-User-Id header string false "opaque user identifier propagated into the generated export URLs (used if user-id query parameter is absent)"
 // @Param request-id query string false "request correlation identifier propagated into the generated export URLs; falls back to X-Request-Id header"
 // @Param X-Request-Id header string false "request correlation identifier propagated into the generated export URLs (used if request-id query parameter is absent)"
-// @Param use-premium-domain query string false "any value except \"false\" (including omission) allows premium-role tokens to get URLs on the premium domain; set to \"false\" to force the standard domain; torrent_client_stat URLs always use the standard domain" default(true)
 // @Param imdb-id query string false "IMDB identifier forwarded into the subtitles export URL (subtitles type only)"
 // @Param archive-format query string false "archive format for directory downloads" Enums(zip, tar) default(zip)
 // @Param paths query []string false "limit a directory archive to the selected file/folder paths (repeatable); each path must exist in the torrent and be inside the exported directory; at most 1024 paths and about 6000 percent-encoded bytes in total" collectionFormat(multi)
@@ -424,7 +423,7 @@ func (s *Web) Serve() error {
 
 // @Summary Returns speed test urls
 // @Description Returns urls for measuring download speed. Each url points to a /speedtest endpoint on a download host and carries the size, token and api-key query parameters.
-// @Description The "standard" url is always present; a "premium" url is added when a premium domain is configured. The token's role claim selects which download subdomains are eligible.
+// @Description One "standard" url. The token's role claim selects which download subdomains are eligible.
 // @Param token query string false "JWT embedded into the generated speed test URLs; falls back to X-Token header; if neither is provided, the server signs its own token with the configured role"
 // @Param X-Token header string false "JWT embedded into the generated speed test URLs (used if token query parameter is absent)"
 // @Param api-key query string false "API key embedded into the generated speed test URLs; falls back to X-Api-Key header, then to the server-configured key"

@@ -386,8 +386,7 @@ paths:
         type: string
       - description: JWT embedded into the generated export URLs; falls back to X-Token
           header; if neither is provided, the server signs its own token with the
-          configured role; the token's role claim selects the premium domain and download
-          subdomains
+          configured role; the token's role claim selects the download subdomains
         in: query
         name: token
         type: string
@@ -415,11 +414,6 @@ paths:
           export URLs (used if request-id query parameter is absent)
         in: header
         name: X-Request-Id
-        type: string
-      - default: "true"
-        description: any value except \
-        in: query
-        name: use-premium-domain
         type: string
       - description: IMDB identifier forwarded into the subtitles export URL (subtitles
           type only)
@@ -534,7 +528,7 @@ paths:
       - '*/*'
       description: |-
         Returns urls for measuring download speed. Each url points to a /speedtest endpoint on a download host and carries the size, token and api-key query parameters.
-        The "standard" url is always present; a "premium" url is added when a premium domain is configured. The token's role claim selects which download subdomains are eligible.
+        One "standard" url. The token's role claim selects which download subdomains are eligible.
       parameters:
       - description: JWT embedded into the generated speed test URLs; falls back to
           X-Token header; if neither is provided, the server signs its own token with

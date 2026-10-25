@@ -18,7 +18,6 @@ const (
 type SpeedTest struct {
 	nsp               *NodesStat
 	domain            string
-	premiumDomain     string
 	apiKey            string
 	apiSecret         string
 	apiRole           string
@@ -43,7 +42,6 @@ func NewSpeedTest(c *cli.Context, nsp *NodesStat) *SpeedTest {
 	return &SpeedTest{
 		nsp:               nsp,
 		domain:            domain,
-		premiumDomain:     c.String(exportPremiumDomainFlag),
 		apiKey:            c.String(exportApiKeyFlag),
 		apiSecret:         c.String(exportApiSecretFlag),
 		apiRole:           c.String(exportApiRoleFlag),
@@ -186,15 +184,5 @@ func (s *SpeedTest) GetURLs(g ParamGetter) ([]SpeedtestURL, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to build standard URL")
 	}
-	result := []SpeedtestURL{
-		{URL: stdURL, Type: "standard"},
-	}
-	if s.premiumDomain != "" {
-		premURL, err := s.buildURL(s.premiumDomain, g)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to build premium URL")
-		}
-		result = append(result, SpeedtestURL{URL: premURL, Type: "premium"})
-	}
-	return result, nil
+	return []SpeedtestURL{{URL: stdURL, Type: "standard"}}, nil
 }

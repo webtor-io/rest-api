@@ -41,7 +41,6 @@ type URLBuilder struct {
 	useSubdomains     bool
 	subdomainsK8SPool string
 	pathPrefix        string
-	premiumDomain     string
 }
 
 func NewURLBuilder(c *cli.Context, sd *Subdomains, cm *CacheMap) *URLBuilder {
@@ -49,7 +48,6 @@ func NewURLBuilder(c *cli.Context, sd *Subdomains, cm *CacheMap) *URLBuilder {
 		sd:                sd,
 		cm:                cm,
 		domain:            c.String(exportDomainFlag),
-		premiumDomain:     c.String(exportPremiumDomainFlag),
 		apiKey:            c.String(exportApiKeyFlag),
 		apiSecret:         c.String(exportApiSecretFlag),
 		apiRole:           c.String(exportApiRoleFlag),
@@ -67,14 +65,12 @@ func (s *URLBuilder) Build(r *Resource, i *ListItem, g ParamGetter, et ExportTyp
 		i:                 i,
 		g:                 g,
 		domain:            s.domain,
-		premiumDomain:     s.premiumDomain,
 		apiKey:            s.apiKey,
 		apiSecret:         s.apiSecret,
 		apiRole:           s.apiRole,
 		useSubdomains:     s.useSubdomains,
 		subdomainsK8SPool: s.subdomainsK8SPool,
 		pathPrefix:        s.pathPrefix,
-		usePremiumDomain:  g.Query("use-premium-domain") != "false",
 	}
 	switch et {
 	case ExportTypeDownload:
@@ -88,15 +84,8 @@ func (s *URLBuilder) Build(r *Resource, i *ListItem, g ParamGetter, et ExportTyp
 		}
 		return sub.Build()
 	case ExportTypeTorrentStat:
-		// Stats are an SSE stream consumed by the warmup watchdog in
-		// real time; routing via the premium edge adds an extra hop
-		// (with chunk buffering on most CDNs) that delays the first
-		// statupdate event by 10-30s on cold-started seeders. Force
-		// the direct domain regardless of role.
-		statBubc := bubc
-		statBubc.usePremiumDomain = false
 		sub := &TorrentStatURLBuilder{
-			BaseURLBuilder: statBubc,
+			BaseURLBuilder: bubc,
 		}
 		return sub.Build()
 	case ExportTypeSubtitles:
@@ -128,8 +117,6 @@ type BaseURLBuilder struct {
 	subdomainsK8SPool string
 	useSubdomains     bool
 	pathPrefix        string
-	premiumDomain     string
-	usePremiumDomain  bool
 }
 
 type DownloadURLBuilder struct {
@@ -286,30 +273,13 @@ func (s *BaseURLBuilder) BuildBaseURL(i *MyURL) (u *MyURL, err error) {
 	return
 }
 
-func (s *BaseURLBuilder) getBaseDomain() string {
-	if s.domain == "" {
-		return ""
-	}
-	if s.premiumDomain != "" {
-		role, err := s.getRole()
-		if err != nil {
-			return ""
-		}
-		if role != "free" && s.usePremiumDomain {
-			return s.premiumDomain
-		}
-	}
-	return s.domain
-}
-
 func (s *BaseURLBuilder) BuildScheme(i *MyURL) (u *MyURL, err error) {
 	u = i
-	domain := s.getBaseDomain()
-	if domain == "" {
+	if s.domain == "" {
 		u.Scheme = "http"
 		return
 	}
-	du, err := url.Parse(domain)
+	du, err := url.Parse(s.domain)
 	if err != nil {
 		return nil, err
 	}
@@ -319,11 +289,10 @@ func (s *BaseURLBuilder) BuildScheme(i *MyURL) (u *MyURL, err error) {
 
 func (s *BaseURLBuilder) BuildDomain(i *MyURL) (u *MyURL, err error) {
 	u = i
-	baseDomain := s.getBaseDomain()
-	if baseDomain == "" {
+	if s.domain == "" {
 		return u, nil
 	}
-	du, err := url.Parse(baseDomain)
+	du, err := url.Parse(s.domain)
 	if err != nil {
 		return nil, err
 	}

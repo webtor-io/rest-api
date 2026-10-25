@@ -237,7 +237,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "JWT embedded into the generated export URLs; falls back to X-Token header; if neither is provided, the server signs its own token with the configured role; the token's role claim selects the premium domain and download subdomains",
+                        "description": "JWT embedded into the generated export URLs; falls back to X-Token header; if neither is provided, the server signs its own token with the configured role; the token's role claim selects the download subdomains",
                         "name": "token",
                         "in": "query"
                     },
@@ -270,13 +270,6 @@ const docTemplate = `{
                         "description": "request correlation identifier propagated into the generated export URLs (used if request-id query parameter is absent)",
                         "name": "X-Request-Id",
                         "in": "header"
-                    },
-                    {
-                        "type": "string",
-                        "default": "true",
-                        "description": "any value except \\",
-                        "name": "use-premium-domain",
-                        "in": "query"
                     },
                     {
                         "type": "string",
@@ -425,7 +418,7 @@ const docTemplate = `{
         },
         "/speedtest": {
             "get": {
-                "description": "Returns urls for measuring download speed. Each url points to a /speedtest endpoint on a download host and carries the size, token and api-key query parameters.\nThe \"standard\" url is always present; a \"premium\" url is added when a premium domain is configured. The token's role claim selects which download subdomains are eligible.",
+                "description": "Returns urls for measuring download speed. Each url points to a /speedtest endpoint on a download host and carries the size, token and api-key query parameters.\nOne \"standard\" url. The token's role claim selects which download subdomains are eligible.",
                 "consumes": [
                     "*/*"
                 ],

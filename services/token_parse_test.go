@@ -36,10 +36,8 @@ import (
 // the token is copied into ?token= of every URL it mints whether it parses
 // or not, and torrent-http-proxy is what refuses it. The parse only picks
 // where the URLs point, by the token's role:
-//   - BaseURLBuilder.getClaims (export): a role other than "free" gets the
-//     premium domain, and the role picks the download subdomain. With a
-//     premium domain configured (production) a refused token yields URLs
-//     with no host; without one, the export answers 400.
+//   - BaseURLBuilder.getClaims (export): the role picks the download
+//     subdomain; a refused token makes the export answer 400.
 //   - SpeedTest.getRole (/speedtest): the role picks the subdomain; a
 //     refused token falls back to the configured role.
 
@@ -358,9 +356,8 @@ func TestTokenParseSpeedtestRole(t *testing.T) {
 }
 
 const (
-	tokenTestHash    = "08ada5a7a6183aae1e09d831df6748d566095a10"
-	tokenTestDomain  = "https://api.example"
-	tokenTestPremium = "https://premium.example"
+	tokenTestHash   = "08ada5a7a6183aae1e09d831df6748d566095a10"
+	tokenTestDomain = "https://api.example"
 )
 
 // noNetwork answers the cache probe without leaving the process.
@@ -386,9 +383,8 @@ func tokenNodes(t *testing.T) *NodesStat {
 }
 
 // tokenRouter is rest-api's router for export and /speedtest over a
-// one-file torrent, configured as production is (secret, subdomains, and
-// a premium domain when premium is set).
-func tokenRouter(t *testing.T, premium bool) http.Handler {
+// one-file torrent, configured as production is (secret, subdomains).
+func tokenRouter(t *testing.T) http.Handler {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	prevGin, prevLog := gin.DefaultWriter, log.StandardLogger().Out
@@ -412,10 +408,6 @@ func tokenRouter(t *testing.T, premium bool) http.Handler {
 	}
 	st := &SpeedTest{nsp: ns, domain: tokenTestDomain, apiSecret: tokenTestSecret, apiRole: "free",
 		useSubdomains: true, subdomainsK8SPool: "seeder"}
-	if premium {
-		ub.premiumDomain = tokenTestPremium
-		st.premiumDomain = tokenTestPremium
-	}
 	rm := NewTestResourceMap()
 	res := &Resource{ID: tokenTestHash, Name: "Sintel", Type: ResourceTypeSha1,
 		Files: []*File{{Path: []string{"Sintel", "Sintel.mp4"}, Size: 1000}}}
@@ -539,58 +531,42 @@ func deliveryName(header bool) string {
 	return "query"
 }
 
-// Export end to end. With a premium domain (production), every token gets
-// a 200: a taken one URLs on the host its role picks, a refused one URLs
-// with no host. Without one, a refused token is a 400.
+// Export end to end: a taken token gets a 200 with URLs on the host its
+// role picks, a refused one a 400.
 func TestTokenParseExport(t *testing.T) {
-	cases := tokenCases(t, tokenTestSecret)
-	for _, premium := range []bool{true, false} {
-		cfg := "premium domain"
-		if !premium {
-			cfg = "no premium domain"
-		}
-		h := tokenRouter(t, premium)
-		for _, c := range cases {
-			for _, header := range deliveries(c) {
-				t.Run(cfg+"/"+c.name+"/"+deliveryName(header), func(t *testing.T) {
-					tok := c.tok()
-					status, body := tokenGet(t, h, "/resource/"+tokenTestHash+"/export/0?types=download,stream", tok, header)
-					var urls []string
-					collectURLs(body["exports"], &urls)
-					tokenDiff(t, "export/"+cfg+"/"+deliveryName(header), c, "status=%d hosts=%s error=%v", status, hostsOf(urls), body["error"])
+	h := tokenRouter(t)
+	for _, c := range tokenCases(t, tokenTestSecret) {
+		for _, header := range deliveries(c) {
+			t.Run(c.name+"/"+deliveryName(header), func(t *testing.T) {
+				tok := c.tok()
+				status, body := tokenGet(t, h, "/resource/"+tokenTestHash+"/export/0?types=download,stream", tok, header)
+				var urls []string
+				collectURLs(body["exports"], &urls)
+				tokenDiff(t, "export/"+deliveryName(header), c, "status=%d hosts=%s error=%v", status, hostsOf(urls), body["error"])
 
-					if !c.taken() && !premium {
-						if status != http.StatusBadRequest {
-							t.Errorf("status %d, want 400", status)
-						}
-						if e, _ := body["error"].(string); !strings.HasPrefix(e, "failed to parse token") {
-							t.Errorf("error %q", e)
-						}
-						return
+				if !c.taken() {
+					if status != http.StatusBadRequest {
+						t.Errorf("status %d, want 400", status)
 					}
-					if status != http.StatusOK {
-						t.Fatalf("status %d, want 200: %v", status, body["error"])
+					if e, _ := body["error"].(string); !strings.HasPrefix(e, "failed to parse token") {
+						t.Errorf("error %q", e)
 					}
-					if len(urls) < 3 { // download, stream, the stream's <source>
-						t.Fatalf("urls %v", urls)
-					}
-					wantHost := ""
-					if c.taken() {
-						base := "api.example"
-						if premium && c.role() != "free" {
-							base = "premium.example"
-						}
-						wantHost = roleHost(c.role(), base)
-					}
-					wantToken := tok
-					if tok == "" {
-						wantToken = ownToken(t)
-					}
-					for _, u := range urls {
-						checkMintedURL(t, u, wantHost, wantToken)
-					}
-				})
-			}
+					return
+				}
+				if status != http.StatusOK {
+					t.Fatalf("status %d, want 200: %v", status, body["error"])
+				}
+				if len(urls) < 3 { // download, stream, the stream's <source>
+					t.Fatalf("urls %v", urls)
+				}
+				wantToken := tok
+				if tok == "" {
+					wantToken = ownToken(t)
+				}
+				for _, u := range urls {
+					checkMintedURL(t, u, roleHost(c.role(), "api.example"), wantToken)
+				}
+			})
 		}
 	}
 }
@@ -598,7 +574,7 @@ func TestTokenParseExport(t *testing.T) {
 // /speedtest end to end: always a 200, the subdomain picked by the role of
 // a taken token, or by the configured role.
 func TestTokenParseSpeedtest(t *testing.T) {
-	h := tokenRouter(t, true)
+	h := tokenRouter(t)
 	for _, c := range tokenCases(t, tokenTestSecret) {
 		for _, header := range deliveries(c) {
 			t.Run(c.name+"/"+deliveryName(header), func(t *testing.T) {
@@ -619,18 +595,15 @@ func TestTokenParseSpeedtest(t *testing.T) {
 					wantToken = ownToken(t)
 				}
 				list, _ := body["urls"].([]any)
-				if len(list) != 2 {
-					t.Fatalf("urls %v, want standard and premium", body["urls"])
+				if len(list) != 1 {
+					t.Fatalf("urls %v, want one standard", body["urls"])
 				}
-				for _, it := range list {
-					m, _ := it.(map[string]any)
-					raw, _ := m["url"].(string)
-					base := "api.example"
-					if m["type"] == "premium" {
-						base = "premium.example"
-					}
-					checkMintedURL(t, raw, roleHost(role, base), wantToken)
+				m, _ := list[0].(map[string]any)
+				if m["type"] != "standard" {
+					t.Errorf("type %v, want standard", m["type"])
 				}
+				raw, _ := m["url"].(string)
+				checkMintedURL(t, raw, roleHost(role, "api.example"), wantToken)
 			})
 		}
 	}
