@@ -290,7 +290,11 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 			}
 			// Even when the torrent is already cached, push any tr= trackers
 			// from the incoming magnet so torrent-store can merge them in.
-			if extra := magnetTrackerTorrent(b, rep.GetTorrent()); extra != nil {
+			// Not for a private torrent: torrent-store keeps the first
+			// trackers it gets for good, and a magnet needs nothing but the
+			// infohash, so its tr= could lock out the real ones. A private
+			// torrent's trackers come from an uploaded .torrent.
+			if extra := magnetTrackerTorrent(b, rep.GetTorrent()); extra != nil && !isPrivate(rep.GetTorrent()) {
 				pushCtx, pushCancel := context.WithTimeout(ctx, s.torrentStoreTimeout)
 				defer pushCancel()
 				_, _ = ts.Push(pushCtx, &tsp.PushRequest{Torrent: extra})
@@ -357,6 +361,16 @@ func magnetTrackerTorrent(magnetURI []byte, base []byte) []byte {
 		return nil
 	}
 	return buf.Bytes()
+}
+
+// isPrivate reports whether torrent's info dict sets the BEP 27 private flag.
+func isPrivate(torrent []byte) bool {
+	mi, err := metainfo.Load(bytes.NewReader(torrent))
+	if err != nil {
+		return false
+	}
+	i, err := mi.UnmarshalInfo()
+	return err == nil && i.Private != nil && *i.Private
 }
 
 func (s *ResourceMap) Get(ctx context.Context, b []byte) (*Resource, error) {

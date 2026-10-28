@@ -66,27 +66,31 @@ func TestParseTorrentPublicKeepsBytes(t *testing.T) {
 	assert.Contains(t, r.MagnetURI, "ws=")
 }
 
-// torrent-store must get the passkey-bearing bytes on every path (it is the
-// only place the seeder takes trackers from); only the answer is stripped.
+// torrent-store must get the passkey-bearing bytes on every path that pushes
+// (it is the only place the seeder takes trackers from); only the answer is
+// stripped. A magnet for a stored private torrent pushes nothing: its tr= is
+// not the uploader's .torrent and could lock out the real trackers.
 func TestResourceMapPrivatePushesOriginal(t *testing.T) {
 	priv := privateTorrent(t)
 	id := "magnet:?xt=urn:btih:" + mustInfoHash(t, priv)
 	magnet := id + "&tr=" + url.QueryEscape(passkeyTracker)
+	squat := id + "&tr=" + url.QueryEscape("http://squat.invalid/announce")
 	notFound := status.Error(codes.NotFound, "not found")
 	any3 := []any{mock.Anything, mock.Anything, mock.Anything}
 	for _, tc := range []struct {
-		name  string
-		body  []byte
-		setup func(ts *TorrentStoreClientMock, m2t *Magnet2TorrentClientMock)
+		name   string
+		body   []byte
+		pushes bool
+		setup  func(ts *TorrentStoreClientMock, m2t *Magnet2TorrentClientMock)
 	}{
-		{"uploaded torrent", priv, func(ts *TorrentStoreClientMock, _ *Magnet2TorrentClientMock) {
+		{"uploaded torrent", priv, true, func(ts *TorrentStoreClientMock, _ *Magnet2TorrentClientMock) {
 			ts.On("Touch", any3...).Return(nil, notFound)
 		}},
-		{"stored magnet", []byte(magnet), func(ts *TorrentStoreClientMock, _ *Magnet2TorrentClientMock) {
+		{"stored magnet", []byte(squat), false, func(ts *TorrentStoreClientMock, _ *Magnet2TorrentClientMock) {
 			ts.On("Touch", any3...).Return(nil, nil)
 			ts.On("Pull", any3...).Return(&tsp.PullReply{Torrent: priv}, nil)
 		}},
-		{"resolved magnet", []byte(magnet), func(ts *TorrentStoreClientMock, m2t *Magnet2TorrentClientMock) {
+		{"resolved magnet", []byte(magnet), true, func(ts *TorrentStoreClientMock, m2t *Magnet2TorrentClientMock) {
 			ts.On("Touch", any3...).Return(nil, notFound)
 			m2t.On("Magnet2Torrent", any3...).Return(&m2tp.Magnet2TorrentReply{Torrent: priv}, nil)
 		}},
@@ -97,12 +101,17 @@ func TestResourceMapPrivatePushesOriginal(t *testing.T) {
 			m2tcl, _ := rm.m2t.Get()
 			ts, m2t := tscl.(*TorrentStoreClientMock), m2tcl.(*Magnet2TorrentClientMock)
 			tc.setup(ts, m2t)
-			ts.On("Push", mock.Anything, mock.MatchedBy(func(in *tsp.PushRequest) bool {
-				return strings.Contains(string(in.Torrent), passkeyTracker)
-			}), mock.Anything).Return(nil, nil).Once()
+			if tc.pushes {
+				ts.On("Push", mock.Anything, mock.MatchedBy(func(in *tsp.PushRequest) bool {
+					return strings.Contains(string(in.Torrent), passkeyTracker)
+				}), mock.Anything).Return(nil, nil).Once()
+			}
 			r, err := rm.Get(context.Background(), tc.body)
 			require.NoError(t, err)
 			assertNoTrackers(t, r)
+			if !tc.pushes {
+				ts.AssertNotCalled(t, "Push", mock.Anything, mock.Anything, mock.Anything)
+			}
 			ts.AssertExpectations(t)
 			m2t.AssertExpectations(t)
 		})
@@ -114,4 +123,23 @@ func mustInfoHash(t *testing.T, b []byte) string {
 	mi, err := metainfo.Load(bytes.NewReader(b))
 	require.NoError(t, err)
 	return mi.HashInfoBytes().HexString()
+}
+
+// A magnet for a stored public torrent still pushes its tr= trackers for
+// torrent-store to merge.
+func TestResourceMapStoredPublicMagnetPushesTrackers(t *testing.T) {
+	pub := loadSintel(t)
+	const extra = "http://extra.invalid/announce"
+	magnet := "magnet:?xt=urn:btih:" + mustInfoHash(t, pub) + "&tr=" + url.QueryEscape(extra)
+	rm := NewTestResourceMap()
+	tscl, _ := rm.ts.Get()
+	ts := tscl.(*TorrentStoreClientMock)
+	ts.On("Touch", mock.Anything, mock.Anything, mock.Anything).Return(nil, nil)
+	ts.On("Pull", mock.Anything, mock.Anything, mock.Anything).Return(&tsp.PullReply{Torrent: pub}, nil)
+	ts.On("Push", mock.Anything, mock.MatchedBy(func(in *tsp.PushRequest) bool {
+		return strings.Contains(string(in.Torrent), extra)
+	}), mock.Anything).Return(nil, nil).Once()
+	_, err := rm.Get(context.Background(), []byte(magnet))
+	require.NoError(t, err)
+	ts.AssertExpectations(t)
 }
