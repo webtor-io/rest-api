@@ -175,8 +175,22 @@ func (s *ResourceMap) parseTorrent(b []byte) (*Resource, error) {
 			Pad:    isPadFile(f.Attr, rel),
 		})
 	}
-	r.MagnetURI = mi.Magnet(nil, &i).String()
 	r.Torrent = b
+	// A BEP 27 private torrent carries the uploader's passkey in its
+	// trackers, and torrent-store keeps one record per infohash that anyone
+	// knowing the infohash reads back through here. So the .torrent and the
+	// magnet go out without announce, announce-list and url-list, for
+	// everyone — the uploader has the original file. torrent-store is always
+	// pushed the caller's bytes, never r.Torrent.
+	if i.Private != nil && *i.Private {
+		mi.Announce, mi.AnnounceList, mi.UrlList = "", nil, nil
+		var buf bytes.Buffer
+		if err := mi.Write(&buf); err != nil {
+			return nil, errors.Wrap(err, "failed to encode private torrent")
+		}
+		r.Torrent = buf.Bytes()
+	}
+	r.MagnetURI = mi.Magnet(nil, &i).String()
 	return r, nil
 }
 
@@ -276,7 +290,11 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 			}
 			// Even when the torrent is already cached, push any tr= trackers
 			// from the incoming magnet so torrent-store can merge them in.
-			if extra := magnetTrackerTorrent(b, rep.GetTorrent()); extra != nil {
+			// Not for a private torrent: torrent-store keeps the first
+			// trackers it gets for good, and a magnet needs nothing but the
+			// infohash, so its tr= could lock out the real ones. A private
+			// torrent's trackers come from an uploaded .torrent.
+			if extra := magnetTrackerTorrent(b, rep.GetTorrent()); extra != nil && !isPrivate(rep.GetTorrent()) {
 				pushCtx, pushCancel := context.WithTimeout(ctx, s.torrentStoreTimeout)
 				defer pushCancel()
 				_, _ = ts.Push(pushCtx, &tsp.PushRequest{Torrent: extra})
@@ -343,6 +361,16 @@ func magnetTrackerTorrent(magnetURI []byte, base []byte) []byte {
 		return nil
 	}
 	return buf.Bytes()
+}
+
+// isPrivate reports whether torrent's info dict sets the BEP 27 private flag.
+func isPrivate(torrent []byte) bool {
+	mi, err := metainfo.Load(bytes.NewReader(torrent))
+	if err != nil {
+		return false
+	}
+	i, err := mi.UnmarshalInfo()
+	return err == nil && i.Private != nil && *i.Private
 }
 
 func (s *ResourceMap) Get(ctx context.Context, b []byte) (*Resource, error) {
