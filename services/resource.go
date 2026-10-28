@@ -175,8 +175,22 @@ func (s *ResourceMap) parseTorrent(b []byte) (*Resource, error) {
 			Pad:    isPadFile(f.Attr, rel),
 		})
 	}
-	r.MagnetURI = mi.Magnet(nil, &i).String()
 	r.Torrent = b
+	// A BEP 27 private torrent carries the uploader's passkey in its
+	// trackers, and torrent-store keeps one record per infohash that anyone
+	// knowing the infohash reads back through here. So the .torrent and the
+	// magnet go out without announce, announce-list and url-list, for
+	// everyone — the uploader has the original file. torrent-store is always
+	// pushed the caller's bytes, never r.Torrent.
+	if i.Private != nil && *i.Private {
+		mi.Announce, mi.AnnounceList, mi.UrlList = "", nil, nil
+		var buf bytes.Buffer
+		if err := mi.Write(&buf); err != nil {
+			return nil, errors.Wrap(err, "failed to encode private torrent")
+		}
+		r.Torrent = buf.Bytes()
+	}
+	r.MagnetURI = mi.Magnet(nil, &i).String()
 	return r, nil
 }
 
