@@ -21,7 +21,7 @@ const docTemplate = `{
     "paths": {
         "/resource/": {
             "post": {
-                "description": "Receives torrent or magnet-uri in request body.\nIf magnet-uri provided instead of torrent, then it tries to fetch torrent from BitTorrent network (timeout 3 minutes).",
+                "description": "Receives torrent or magnet-uri in request body.\nIf magnet-uri provided instead of torrent, then it tries to fetch torrent from BitTorrent network (timeout 3 minutes).\nA magnet-uri without tr= trackers that resolves to a private (BEP 27) torrent not stored yet is refused with 422: such a torrent only works through trackers, so upload its .torrent file or add your tracker to the magnet.",
                 "consumes": [
                     "*/*"
                 ],
@@ -71,6 +71,12 @@ const docTemplate = `{
                     },
                     "408": {
                         "description": "Request Timeout",
+                        "schema": {
+                            "$ref": "#/definitions/services.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/services.ErrorResponse"
                         }
