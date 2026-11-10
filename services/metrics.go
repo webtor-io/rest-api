@@ -71,8 +71,12 @@ var (
 	// How many magnet resolutions turn out to be BEP 27 private torrents. Such
 	// a torrent only works with the uploader's .torrent (the passkey is in its
 	// trackers, never in the info dict), so this sizes the magnet users that
-	// path concerns. Counted once per resolution, not per request: lazymap
-	// shares one loader between concurrent and repeated requests for a hash.
+	// path concerns. It counts magnet2torrent calls that returned an info
+	// dict, not requests and not distinct torrents: lazymap shares one loader
+	// between concurrent requests for a hash and keeps a success for 10
+	// minutes, by which time torrent-store has the hash; a result that was
+	// not stored (the push failed) is resolved, and counted, again by the
+	// next request for it.
 	magnetResolvedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: metricsNamespace,
 		Subsystem: "magnet",
@@ -80,6 +84,15 @@ var (
 		Help:      "Magnets resolved by magnet2torrent for an infohash torrent-store did not have, by the info dict's BEP 27 private flag.",
 	}, []string{"private"})
 )
+
+func init() {
+	// Both series from the start at 0: increase() takes a series' first
+	// sample as its baseline, so one created by its first Inc would hide that
+	// resolution, and private="true" is rare enough for that to matter.
+	for _, private := range []string{"true", "false"} {
+		magnetResolvedTotal.WithLabelValues(private)
+	}
+}
 
 // Upstream names as they appear in the "upstream" label.
 const (

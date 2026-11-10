@@ -22,6 +22,36 @@ import (
 	tsp "github.com/webtor-io/torrent-store/proto"
 )
 
+// magnetResolvedLabels lists the label pairs of every
+// restapi_magnet_resolved_total series the metrics port would serve
+// (common-services Prom, promhttp.Handler: the default registry).
+func magnetResolvedLabels(t *testing.T) []string {
+	t.Helper()
+	mfs, err := prometheus.DefaultGatherer.Gather()
+	require.NoError(t, err)
+	var labels []string
+	for _, mf := range mfs {
+		if mf.GetName() == "restapi_magnet_resolved_total" {
+			for _, m := range mf.GetMetric() {
+				for _, l := range m.GetLabel() {
+					labels = append(labels, l.GetName()+"="+l.GetValue())
+				}
+			}
+		}
+	}
+	return labels
+}
+
+// Both series exist before the first resolution: increase() over a series
+// that appears with a 1 reads it as 0, so a lazily created
+// private="true" would hide the first private resolution after every
+// restart. Declared ahead of TestMagnetResolvedTotal, which runs after it and
+// creates both series by resolving; run alone, nothing else here resolves a
+// magnet first.
+func TestMagnetResolvedSeriesExistUpfront(t *testing.T) {
+	assert.ElementsMatch(t, []string{"private=true", "private=false"}, magnetResolvedLabels(t))
+}
+
 // Every magnet magnet2torrent resolves for an infohash torrent-store does not
 // have is counted once, by the BEP 27 private flag of the info dict it got
 // back. A magnet for a stored torrent is not a resolution, and neither is a
@@ -73,21 +103,8 @@ func TestMagnetResolvedTotal(t *testing.T) {
 		})
 	}
 
-	// The metrics port serves the default registry (common-services Prom,
-	// promhttp.Handler), so the series must be there under this name.
-	mfs, err := prometheus.DefaultGatherer.Gather()
-	require.NoError(t, err)
-	var labels []string
-	for _, mf := range mfs {
-		if mf.GetName() == "restapi_magnet_resolved_total" {
-			for _, m := range mf.GetMetric() {
-				for _, l := range m.GetLabel() {
-					labels = append(labels, l.GetName()+"="+l.GetValue())
-				}
-			}
-		}
-	}
-	assert.ElementsMatch(t, []string{"private=true", "private=false"}, labels)
+	// The series the metrics port serves, under this name.
+	assert.ElementsMatch(t, []string{"private=true", "private=false"}, magnetResolvedLabels(t))
 }
 
 // A magnet that does not parse is answered 400 with the reason, but neither
