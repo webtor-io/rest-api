@@ -317,11 +317,22 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 		} else if err != nil {
 			return nil, err
 		}
-		magnetResolvedTotal.WithLabelValues(strconv.FormatBool(isPrivate(rep.GetTorrent()))).Inc()
+		private := isPrivate(rep.GetTorrent())
+		magnetResolvedTotal.WithLabelValues(strconv.FormatBool(private)).Inc()
 		// Inject the magnet's tr= trackers before pushing — m2t strips them
 		// during DHT metadata exchange, leaving the .torrent trackerless.
 		payload := rep.GetTorrent()
-		if augmented := magnetTrackerTorrent(b, payload); augmented != nil {
+		augmented := magnetTrackerTorrent(b, payload)
+		// A private torrent works only through trackers (BEP 27 rules out DHT
+		// and PEX), and the resolved result has none. A magnet carrying the
+		// user's own tr= is pushed with them, as for any torrent. A bare one
+		// would be stored trackerless and served that way to every later
+		// magnet for the hash, so nothing is pushed and the caller is told
+		// to upload the .torrent or bring a tracker.
+		if private && augmented == nil {
+			return nil, errPrivateMagnet
+		}
+		if augmented != nil {
 			payload = augmented
 		}
 		_, err = ts.Push(ctx, &tsp.PushRequest{Torrent: payload})
@@ -332,6 +343,11 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 	}
 	return nil, nil
 }
+
+// errPrivateMagnet refuses a magnet without tr= for a BEP 27 private torrent
+// that is not stored yet. The web error handler answers it 422 by identity,
+// and web-ui keys on that status; the text is for API callers.
+var errPrivateMagnet = errors.New("private torrent: this magnet has no tracker; upload the .torrent file or use a magnet that includes your tracker")
 
 // forbidden marks a refusal from torrent-store (stoplist, abuse ban) the way
 // the Touch path does, so the web error handler answers 403 instead of 500.

@@ -86,6 +86,7 @@ func RegisterWebFlags(f []cli.Flag) []cli.Flag {
 // @Summary Stores resource
 // @Description Receives torrent or magnet-uri in request body.
 // @Description If magnet-uri provided instead of torrent, then it tries to fetch torrent from BitTorrent network (timeout 3 minutes).
+// @Description A magnet-uri without tr= trackers that resolves to a private (BEP 27) torrent not stored yet is refused with 422: such a torrent only works through trackers, so upload its .torrent file or add your tracker to the magnet.
 // @Param resource body string true "resource" example("magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10&dn=Sintel&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&tr=wss%3A%2F%2Ftracker.fastcast.nz&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F")
 // @Schemes
 // @Tags   resource
@@ -96,6 +97,7 @@ func RegisterWebFlags(f []cli.Flag) []cli.Flag {
 // @Failure 403 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 408 {object} ErrorResponse
+// @Failure 422 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /resource/ [post]
 func (s *Web) postResource(g *gin.Context) {
@@ -372,6 +374,14 @@ func (s *Web) errorHandler(c *gin.Context) {
 		// to the client.
 		logPanic(c, pe.Value, pe.Stack)
 		c.PureJSON(http.StatusInternalServerError, &ErrorResponse{Error: http.StatusText(http.StatusInternalServerError)})
+		return
+	}
+	if errors.Is(err.Err, errPrivateMagnet) {
+		// By identity and ahead of the keyword match below, which a wrapping
+		// message could steer: web-ui tells this case apart by the status.
+		// Warn, not error: the client sent a magnet that cannot work.
+		log.Warn(err)
+		c.PureJSON(http.StatusUnprocessableEntity, &ErrorResponse{Error: errPrivateMagnet.Error()})
 		return
 	}
 	log.Error(err)
