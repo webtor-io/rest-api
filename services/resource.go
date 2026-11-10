@@ -3,6 +3,7 @@ package services
 import (
 	"bytes"
 	"context"
+	"strconv"
 	"strings"
 	"time"
 
@@ -125,7 +126,10 @@ func NewResourceMap(ts TorrentStoreGetter, m2t Magnet2TorrentGetter) *ResourceMa
 func (s *ResourceMap) parseMagnet(b []byte) (*Resource, error) {
 	ma, err := metainfo.ParseMagnetUri(string(b))
 	if err != nil {
-		return nil, err
+		// url.Parse quotes the whole magnet, tr= passkeys included, and the
+		// web error handler logs and answers the error as is (gin's access
+		// log prints it too). The reason is enough; the caller has the magnet.
+		return nil, withoutURL(err)
 	}
 	// An all-zero infohash parses, then panics magnet2torrent.
 	if ma.InfoHash.IsZero() {
@@ -313,6 +317,7 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 		} else if err != nil {
 			return nil, err
 		}
+		magnetResolvedTotal.WithLabelValues(strconv.FormatBool(isPrivate(rep.GetTorrent()))).Inc()
 		// Inject the magnet's tr= trackers before pushing — m2t strips them
 		// during DHT metadata exchange, leaving the .torrent trackerless.
 		payload := rep.GetTorrent()
