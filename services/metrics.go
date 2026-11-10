@@ -76,7 +76,13 @@ var (
 	// between concurrent requests for a hash and keeps a success for 10
 	// minutes, by which time torrent-store has the hash; a result that was
 	// not stored (the push failed) is resolved, and counted, again by the
-	// next request for it.
+	// next request for it. That includes every bare private magnet, which is
+	// refused and never stored, so private="true" counts attempts, not
+	// torrents: retries within 10 minutes of a refusal are answered from
+	// ResourceMap.privateRefusals without a resolution and are not counted,
+	// later ones are. A .torrent or a magnet with a tracker that shared a
+	// refused magnet's loader is run again on its own, and a magnet among
+	// them resolves, and counts, a second time.
 	magnetResolvedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: metricsNamespace,
 		Subsystem: "magnet",
