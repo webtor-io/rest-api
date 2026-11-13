@@ -109,6 +109,8 @@ func TestPrivateTorrentUploadAnswers(t *testing.T) {
 		// one store refusal stands for all four: the full table of reasons is TestFromStoreReasons (S32)
 		{"needs account", nil, infoErr(codes.PermissionDenied, "torrent-store", "private_needs_account"), 422, "private_needs_account", "refused"},
 		{"stoplist", nil, status.Error(codes.PermissionDenied, "banned"), 403, "", "refused"},
+		// the store's geometry check: answered as a public .torrent is, never as retryable
+		{"malformed", nil, status.Error(codes.InvalidArgument, "malformed torrent"), 500, "", "refused"},
 		{"store down", nil, status.Error(codes.Unavailable, "s3"), 503, "", "failed"},
 		{"old store", &tsp.PushReply{}, nil, 503, "store_outdated", "outdated"},
 		{"updated", &tsp.PushReply{RecordOutcome: "updated"}, nil, 200, "", "updated"},

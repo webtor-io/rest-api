@@ -93,7 +93,8 @@ var (
 	// Pushes of BEP 27 private torrents with the caller's uid (pushPrivate):
 	// an uploaded .torrent, or a magnet with tr= of an unknown hash. outcome
 	// is the store's record outcome (another non-empty one is unchanged),
-	// refused (ErrorInfo or PermissionDenied), failed (any other error) or
+	// refused (ErrorInfo, PermissionDenied, or InvalidArgument without
+	// ErrorInfo: a malformed torrent), failed (any other error) or
 	// outdated (no outcome: a store that predates private records).
 	privateUploadsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: metricsNamespace,

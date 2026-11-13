@@ -348,6 +348,8 @@ func TestPushPrivateUnknownAnswers(t *testing.T) {
 		outcome string
 	}{
 		{"unknown reason", nil, infoErr(codes.Unavailable, "torrent-store", "reason_from_the_future"), http.StatusServiceUnavailable, "failed"},
+		// not taken for a malformed torrent, which has no ErrorInfo
+		{"unknown reason, InvalidArgument", nil, infoErr(codes.InvalidArgument, "torrent-store", "reason_from_the_future"), http.StatusServiceUnavailable, "failed"},
 		{"unknown outcome", &tsp.PushReply{RecordOutcome: "merged"}, nil, 0, "unchanged"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

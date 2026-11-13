@@ -394,8 +394,9 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte, u Uploader
 
 // pushPrivate pushes the bytes of a private torrent for u and returns the
 // store's record outcome. Never dry_run. A refusal by rule (ErrorInfo, or
-// PermissionDenied: the stoplist) is answered as the store said; anything
-// else, or a store that predates records (no outcome), is a 503.
+// PermissionDenied: the stoplist) and a malformed torrent (InvalidArgument
+// without ErrorInfo) are answered as the store said, and counted refused;
+// anything else, or a store that predates records (no outcome), is a 503.
 func (s *ResourceMap) pushPrivate(ctx context.Context, torrent []byte, u Uploader) (outcome string, err error) {
 	label := "failed"
 	defer func() { privateUploadsTotal.WithLabelValues(u.Source, label).Inc() }()
@@ -408,9 +409,13 @@ func (s *ResourceMap) pushPrivate(ctx context.Context, torrent []byte, u Uploade
 	rep, err := ts.Push(pushCtx, &tsp.PushRequest{Torrent: torrent, Caller: u.caller(), Source: u.Source})
 	if err != nil {
 		// An ErrorInfo reason this version does not know reads as a status
-		// without one: fromStore leaves it as it came, and it is a 503.
+		// without one: fromStore leaves it as it came, and it is a 503. A
+		// malformed torrent is answered as a public one is, not with a
+		// retryable 503.
 		var ae *apiError
-		if err = fromStore(err, true); errors.As(err, &ae) || status.Code(err) == gcodes.PermissionDenied {
+		_, info := errorInfoReason(err)
+		code := status.Code(err)
+		if err = fromStore(err, true); errors.As(err, &ae) || code == gcodes.PermissionDenied || code == gcodes.InvalidArgument && !info {
 			label = "refused"
 			return "", err
 		}
