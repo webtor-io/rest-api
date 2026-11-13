@@ -72,12 +72,14 @@ func parseToken(tokenString, secret string) (jwt.MapClaims, error) {
 
 // resign copies raw, sets hash=h, uid=c.UID, exp=min(exp, now+privateLinkTTL)
 // (now+privateLinkTTL without exp, or with exp 0, which jwt reads as unset),
-// signs HS256. Every other claim (rules, rate, role, sessionID, domain) stays.
+// signs HS256. internal is dropped: the link goes to the end user. Every
+// other claim (rules, rate, role, sessionID, domain) stays.
 func (c callerClaims) resign(secret, h string, now time.Time) (string, error) {
 	claims := jwt.MapClaims{}
 	for k, v := range c.raw {
 		claims[k] = v
 	}
+	delete(claims, "internal")
 	claims["hash"] = h
 	claims["uid"] = c.UID
 	exp, _ := claims["exp"].(float64) // raw comes from parseToken: exp is float64 or absent

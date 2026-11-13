@@ -1,6 +1,7 @@
 package services
 
 import (
+	"encoding/json"
 	"net/url"
 	"testing"
 	"time"
@@ -79,6 +80,17 @@ func TestExportNeverInternal(t *testing.T) {
 				e := errorBody(t, rec)
 				assert.Equal(t, codePrivateTorrent, e.Code)
 				assert.Equal(t, reasonSignIn, e.Reason)
+			} else { // the link token goes to the end user: never internal
+				var body any
+				require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+				var urls []string
+				collectURLs(body, &urls)
+				require.NotEmpty(t, urls)
+				for _, u := range urls {
+					got, err := parseToken(tokenOf(t, u), tokenTestSecret)
+					require.NoError(t, err)
+					assert.NotContains(t, got, "internal", u)
+				}
 			}
 			ts.AssertNumberOfCalls(t, "Touch", 1)
 			ts.AssertCalled(t, "Touch", mock.Anything, touchOf(tokenTestHash, callerIs(tc.uid, false)), mock.Anything)
