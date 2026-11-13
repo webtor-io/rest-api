@@ -17,10 +17,20 @@ type ResourceResponse struct {
 	Size int64 `json:"size"`
 	// FilesCount is the number of files in the torrent.
 	FilesCount int `json:"files_count"`
+	// Private is true for a BEP 27 private torrent. Always present: its
+	// absence must never be read as false.
+	Private bool `json:"private"`
+	// Verified is "accepted" when a magnet's tracker accepted it and the
+	// record was created by this request; empty otherwise.
+	Verified string `json:"verified,omitempty"`
 }
 
 type ErrorResponse struct {
 	Error string `json:"error"`
+	// Code tells refusals apart (private_torrent, private_magnet, ...).
+	Code string `json:"code,omitempty"`
+	// Reason refines Code (for private_torrent: sign_in, no_record, token_in_query).
+	Reason string `json:"reason,omitempty"`
 }
 
 type ListType string

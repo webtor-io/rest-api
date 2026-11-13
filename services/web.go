@@ -376,12 +376,20 @@ func (s *Web) errorHandler(c *gin.Context) {
 		c.PureJSON(http.StatusInternalServerError, &ErrorResponse{Error: http.StatusText(http.StatusInternalServerError)})
 		return
 	}
-	if errors.Is(err.Err, errPrivateMagnet) {
-		// By identity and ahead of the keyword match below, which a wrapping
-		// message could steer: web-ui tells this case apart by the status.
-		// Warn, not error: the client sent a magnet that cannot work.
-		log.Warn(err)
-		c.PureJSON(http.StatusUnprocessableEntity, &ErrorResponse{Error: errPrivateMagnet.Error()})
+	var ae *apiError
+	if errors.As(err.Err, &ae) {
+		// By type and ahead of the keyword match below, which a wrapping
+		// message could steer: clients tell these cases apart by status and
+		// code. Below 500 the client sent something that cannot work: warn.
+		if ae.RetryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(ae.RetryAfter))
+		}
+		if ae.Status < http.StatusInternalServerError {
+			log.Warn(err)
+		} else {
+			log.Error(err)
+		}
+		c.PureJSON(ae.Status, &ErrorResponse{Error: ae.Msg, Code: ae.Code, Reason: ae.Reason})
 		return
 	}
 	log.Error(err)

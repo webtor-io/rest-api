@@ -3,6 +3,7 @@ package services
 import (
 	"bytes"
 	"context"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -367,9 +368,13 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 }
 
 // errPrivateMagnet refuses a magnet with no tracker (bareMagnet) for a BEP 27
-// private torrent that is not stored yet. The web error handler answers it 422 by identity,
-// and web-ui keys on that status; the text is for API callers.
-var errPrivateMagnet = errors.New("private torrent: this magnet has no tracker; upload the .torrent file or use a magnet that includes your tracker")
+// private torrent that is not stored yet: 422 private_magnet. web-ui keys on
+// that status; the text is for API callers.
+var errPrivateMagnet = &apiError{
+	Status: http.StatusUnprocessableEntity,
+	Code:   codePrivateMagnet,
+	Msg:    "private torrent: this magnet has no tracker; upload the .torrent file or use a magnet that includes your tracker",
+}
 
 // forbidden marks a refusal from torrent-store (stoplist, abuse ban) the way
 // the Touch path does, so the web error handler answers 403 instead of 500.

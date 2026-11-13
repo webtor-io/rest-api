@@ -28,7 +28,7 @@ import (
 )
 
 // web-ui recognises this answer by its status; the text is for API callers.
-const privateMagnetBody = `{"error":"private torrent: this magnet has no tracker; upload the .torrent file or use a magnet that includes your tracker"}`
+const privateMagnetBody = `{"error":"private torrent: this magnet has no tracker; upload the .torrent file or use a magnet that includes your tracker","code":"private_magnet"}`
 
 func postResource(t *testing.T, rm *ResourceMap, body []byte) *httptest.ResponseRecorder {
 	t.Helper()
