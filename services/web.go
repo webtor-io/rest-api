@@ -348,6 +348,11 @@ func (s *Web) getExport(g *gin.Context) {
 		g.Error(err)
 		return
 	}
+	pg, err := s.privateAllowed(g, r, routeExport)
+	if err != nil {
+		g.Error(err)
+		return
+	}
 
 	var item *ListItem
 	if idx, ierr := strconv.Atoi(contentID); ierr == nil {
@@ -373,7 +378,7 @@ func (s *Web) getExport(g *gin.Context) {
 		g.Error(errors.Errorf("content with id %v not found", contentID))
 		return
 	}
-	res, err := s.e.Get(r, item, args, g)
+	res, err := s.e.Get(r, item, args, pg)
 	if err != nil {
 		g.Error(err)
 		return

@@ -2,6 +2,7 @@ package services
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/pkg/errors"
@@ -35,6 +36,20 @@ var (
 		Reason: reasonTokenInQuery, Msg: textPrivateTorrent}
 )
 
+// resignedParams hands every URL builder the re-signed token: GetHeader("X-Token") → token.
+// Query is not overridden: a request with ?token= is refused before any re-sign (token_in_query).
+type resignedParams struct {
+	ParamGetter
+	token string
+}
+
+func (p resignedParams) GetHeader(k string) string {
+	if http.CanonicalHeaderKey(k) == "X-Token" {
+		return p.token
+	}
+	return p.ParamGetter.GetHeader(k)
+}
+
 // refuse counts a refusal on route and applies the mode: ae in enforce, nil
 // in observe, where the request goes on as it did before. The label is the
 // code, for private_torrent its reason; a 429 has no code (rate_limited). A
@@ -61,7 +76,8 @@ func (s *Web) refuse(g *gin.Context, route string, ae *apiError) error {
 // privateAllowed applies the access rule to r for this request and returns
 // the ParamGetter export must build its URLs with. A public r costs nothing.
 // A refusal goes through refuse; a store that cannot answer is a 503 in both
-// modes.
+// modes. Only an allowance re-signs export's token, in both modes: a refusal
+// in observe keeps the request's token as it was.
 func (s *Web) privateAllowed(g *gin.Context, r *Resource, route string) (ParamGetter, error) {
 	if !r.Private {
 		return g, nil
@@ -88,5 +104,12 @@ func (s *Web) privateAllowed(g *gin.Context, r *Resource, route string) (ParamGe
 	if err != nil {
 		return nil, err
 	}
-	return g, nil
+	if route != routeExport {
+		return g, nil
+	}
+	tok, err := cl.resign(s.secret, r.ID, time.Now())
+	if err != nil {
+		return nil, err
+	}
+	return resignedParams{g, tok}, nil
 }
