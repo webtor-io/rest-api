@@ -15,7 +15,7 @@ import (
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/webtor-io/lazymap"
 
-	m2tp "github.com/webtor-io/magnet2torrent/magnet2torrent"
+	m2tp "github.com/webtor-io/magnet2torrent/proto"
 	tsp "github.com/webtor-io/torrent-store/proto"
 )
 

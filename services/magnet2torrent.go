@@ -9,12 +9,12 @@ import (
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
-	m2t "github.com/webtor-io/magnet2torrent/magnet2torrent"
+	m2tp "github.com/webtor-io/magnet2torrent/proto"
 	"google.golang.org/grpc"
 )
 
 type Magnet2Torrent struct {
-	cl   m2t.Magnet2TorrentClient
+	cl   m2tp.Magnet2TorrentClient
 	host string
 	port int
 	conn *grpc.ClientConn
@@ -52,7 +52,7 @@ func NewMagnet2Torrent(c *cli.Context) *Magnet2Torrent {
 	}
 }
 
-func (s *Magnet2Torrent) get() (m2t.Magnet2TorrentClient, error) {
+func (s *Magnet2Torrent) get() (m2tp.Magnet2TorrentClient, error) {
 	log.Info("initializing Magnet2Torrent")
 	addr := fmt.Sprintf("%s:%d", s.host, s.port)
 	conn, err := grpc.NewClient(addr,
@@ -67,10 +67,10 @@ func (s *Magnet2Torrent) get() (m2t.Magnet2TorrentClient, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to dial torrent store addr=%v", addr)
 	}
-	return m2t.NewMagnet2TorrentClient(s.conn), nil
+	return m2tp.NewMagnet2TorrentClient(s.conn), nil
 }
 
-func (s *Magnet2Torrent) Get() (m2t.Magnet2TorrentClient, error) {
+func (s *Magnet2Torrent) Get() (m2tp.Magnet2TorrentClient, error) {
 	s.once.Do(func() {
 		s.cl, s.err = s.get()
 	})
