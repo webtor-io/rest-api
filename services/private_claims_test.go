@@ -59,7 +59,8 @@ func TestReadClaims(t *testing.T) {
 }
 
 func TestResign(t *testing.T) {
-	now := time.Unix(1_800_000_000, 0)
+	// The real clock, not a fixed date: parseToken checks exp against it.
+	now := time.Now()
 	rules := map[string]any{"grace": map[string]any{"token": "g"}}
 	for _, tc := range []struct {
 		name    string
@@ -70,16 +71,18 @@ func TestResign(t *testing.T) {
 		{"short exp kept", now.Add(time.Hour).Unix(), now.Add(time.Hour).Unix()},
 		{"vault: no exp", nil, now.Add(24 * time.Hour).Unix()},
 		// jwt reads exp 0 as unset, and min(0, now+24h) would be a link that never expires.
-		{"exp zero", float64(0), now.Add(24 * time.Hour).Unix()},
+		{"exp zero", 0, now.Add(24 * time.Hour).Unix()},
 	} {
 		in := jwt.MapClaims{"uid": uidA, "hash": "stale", "role": "free", "sessionID": "s", "domain": "webtor.io", "rate": "10M", "rules": rules}
 		if tc.exp != nil {
 			in["exp"] = tc.exp
 		}
-		c := callerClaims{UID: uidA, raw: in}
+		raw, err := parseToken(signed(t, in), tokenTestSecret) // the shape readClaims keeps: exp as float64
+		require.NoError(t, err, tc.name)
+		c := callerClaims{UID: uidA, raw: raw}
 		tok, err := c.resign(tokenTestSecret, tokenTestHash, now)
 		require.NoError(t, err)
-		got, err := parseToken(tok, tokenTestSecret) // now is in 2027, so every exp here is still ahead of the real clock
+		got, err := parseToken(tok, tokenTestSecret)
 		require.NoError(t, err)
 		assert.Equal(t, tokenTestHash, got["hash"], tc.name)
 		assert.Equal(t, uidA, got["uid"], tc.name)

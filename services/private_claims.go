@@ -80,14 +80,7 @@ func (c callerClaims) resign(secret, h string, now time.Time) (string, error) {
 	}
 	claims["hash"] = h
 	claims["uid"] = c.UID
-	// A parsed token carries exp as float64; claims built in Go, as int64.
-	var exp float64
-	switch v := claims["exp"].(type) {
-	case float64:
-		exp = v
-	case int64:
-		exp = float64(v)
-	}
+	exp, _ := claims["exp"].(float64) // raw comes from parseToken: exp is float64 or absent
 	if limit := now.Add(privateLinkTTL).Unix(); exp <= 0 || exp > float64(limit) {
 		claims["exp"] = limit
 	}
