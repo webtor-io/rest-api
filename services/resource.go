@@ -509,19 +509,22 @@ func magnetTrackerTorrent(magnetURI []byte, base []byte) []byte {
 // It decides only the private-torrent refusal; a public magnet's tr= values
 // are pushed as they are.
 func bareMagnet(r *Resource, b []byte) bool {
-	if r.Type != ResourceTypeMagnet {
-		return false
-	}
+	return r.Type == ResourceTypeMagnet && len(magnetTier(b)) == 0
+}
+
+// magnetTier is the magnet's tr= values, trimmed, blanks dropped, in magnet order; nil if it does not parse.
+func magnetTier(b []byte) []string {
 	ma, err := metainfo.ParseMagnetUri(string(b))
 	if err != nil {
-		return true
+		return nil
 	}
+	var tier []string
 	for _, t := range ma.Trackers {
-		if strings.TrimSpace(t) != "" {
-			return false
+		if t = strings.TrimSpace(t); t != "" {
+			tier = append(tier, t)
 		}
 	}
-	return true
+	return tier
 }
 
 // isPrivate reports whether torrent's info dict sets the BEP 27 private flag.

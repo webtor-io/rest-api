@@ -52,7 +52,7 @@ func newPrivateWeb(t *testing.T, enforce bool) (h http.Handler, w *Web, ts *Torr
 	rm := NewTestResourceMap()
 	ts, m2t = resourceMapMocks(rm)
 	list := NewList()
-	w = &Web{rm: rm, c: list, st: st, secret: tokenTestSecret, enforce: enforce,
+	w = &Web{rm: rm, c: list, st: st, secret: tokenTestSecret, enforce: enforce, vl: newVerifyLimiter(),
 		e: NewExport(NewDownloadExporter(ub), NewStreamExporter(ub, NewTagBuilder(ub, list)))}
 	r := newRouter()
 	r.Use(w.errorHandler)

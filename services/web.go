@@ -59,6 +59,8 @@ type Web struct {
 	// enforce: a refusal of the private access rule is answered; otherwise
 	// it is only counted and the request goes on (PRIVATE_ACCESS_ENFORCE).
 	enforce bool
+	// vl caps the tracker checks (Verify) of a known private magnet per uid.
+	vl *verifyLimiter
 }
 
 func NewWeb(c *cli.Context, rm *ResourceMap, co *List, ex *Export, st *SpeedTest) *Web {
@@ -71,6 +73,7 @@ func NewWeb(c *cli.Context, rm *ResourceMap, co *List, ex *Export, st *SpeedTest
 		st:      st,
 		secret:  c.String(exportApiSecretFlag),
 		enforce: c.Bool(privateAccessEnforceFlag),
+		vl:      newVerifyLimiter(),
 	}
 	if w.enforce { // the gauge starts at 0
 		privateEnforce.Set(1)
@@ -126,7 +129,8 @@ func (s *Web) postResource(g *gin.Context) {
 		return
 	}
 	ctx := g.Request.Context()
-	u := readClaims(g, s.secret).uploader()
+	cl := readClaims(g, s.secret)
+	u := cl.uploader()
 	r, err := s.rm.parse(bb)
 	if err != nil {
 		g.Error(err)
@@ -145,11 +149,19 @@ func (s *Web) postResource(g *gin.Context) {
 		g.Error(err)
 		return
 	}
-	// A stored private hash asked for by its infohash or a bare magnet is
-	// read from someone's upload: the access rule decides. One this request
-	// resolved was pushed for this caller.
-	if !resolved && res.Private && (r.Type == ResourceTypeSha1 || bareMagnet(r, bb)) {
-		if _, err := s.privateAllowed(g, res, routePost); err != nil {
+	// A private torrent this request pushed, as a .torrent or a magnet it
+	// resolved, was pushed for this caller. Any other is read from a stored
+	// upload and is answered only after a decision: a magnet with tr= is
+	// checked as a known private magnet, an infohash or a bare magnet goes
+	// by the access rule.
+	verified := ""
+	if !resolved && res.Private && r.Type != ResourceTypeTorrent {
+		if r.Type == ResourceTypeMagnet && !bareMagnet(r, bb) {
+			verified, err = s.knownPrivateMagnet(g, res, bb, cl)
+		} else {
+			_, err = s.privateAllowed(g, res, routePost)
+		}
+		if err != nil {
 			g.Error(err)
 			return
 		}
@@ -159,6 +171,7 @@ func (s *Web) postResource(g *gin.Context) {
 		Name:      res.Name,
 		MagnetURI: res.MagnetURI,
 		Private:   res.Private,
+		Verified:  verified,
 	}
 	s.fillResourceStructure(rr, res)
 	g.PureJSON(http.StatusOK, rr)
