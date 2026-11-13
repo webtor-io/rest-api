@@ -257,18 +257,11 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 	defer touchCancel()
 	_, err = ts.Touch(touchCtx, &tsp.TouchRequest{InfoHash: r.ID})
 	if err != nil {
-		if st, ok := status.FromError(err); ok {
-			switch st.Code() {
-			case gcodes.PermissionDenied:
-				return nil, errors.Wrap(err, "forbidden")
-			case gcodes.NotFound:
-				found = false
-			default:
-				return nil, err
-			}
-		} else {
+		// fromStore first, as in getManifest: a refusal is never "not found".
+		if err = fromStore(err, false); status.Code(err) != gcodes.NotFound {
 			return nil, err
 		}
+		found = false
 	}
 	switch r.Type {
 	case ResourceTypeSha1:
@@ -279,7 +272,7 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 		defer pullCancel()
 		rep, err := ts.Pull(pullCtx, &tsp.PullRequest{InfoHash: r.ID})
 		if err != nil {
-			return nil, forbidden(err)
+			return nil, fromStore(err, false)
 		}
 		return s.parseTorrent(rep.GetTorrent())
 
@@ -290,7 +283,7 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 		pushCtx, pushCancel := context.WithTimeout(ctx, s.torrentStoreTimeout)
 		defer pushCancel()
 		if _, err := ts.Push(pushCtx, &tsp.PushRequest{Torrent: b}); err != nil {
-			return nil, forbidden(err)
+			return nil, fromStore(err, true)
 		}
 		s.privateRefusals.Drop(r.ID)
 		return r, nil
@@ -301,7 +294,7 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 			defer pullCancel()
 			rep, err := ts.Pull(pullCtx, &tsp.PullRequest{InfoHash: r.ID})
 			if err != nil {
-				return nil, forbidden(err)
+				return nil, fromStore(err, false)
 			}
 			// Even when the torrent is already cached, push any tr= trackers
 			// from the incoming magnet so torrent-store can merge them in.
@@ -331,6 +324,13 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 		if err != nil && magnetCtx.Err() != nil {
 			return nil, errors.Wrap(err, "magnet timeout")
 		} else if err != nil {
+			// A magnet2torrent that knows private torrents refuses a bare
+			// private magnet itself (private_magnet): the same refusal as
+			// the check below, which stays for one that does not.
+			err = fromStore(err, true)
+			if errors.Is(err, errPrivateMagnet) {
+				_, _ = s.privateRefusals.Get(r.ID, func() (bool, error) { return true, nil })
+			}
 			return nil, err
 		}
 		private := isPrivate(rep.GetTorrent())
@@ -359,7 +359,7 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 		}
 		_, err = ts.Push(ctx, &tsp.PushRequest{Torrent: payload})
 		if err != nil {
-			return nil, forbidden(err)
+			return nil, fromStore(err, true)
 		}
 		s.privateRefusals.Drop(r.ID)
 		return s.parseTorrent(payload)
@@ -374,15 +374,6 @@ var errPrivateMagnet = &apiError{
 	Status: http.StatusUnprocessableEntity,
 	Code:   codePrivateMagnet,
 	Msg:    "private torrent: this magnet has no tracker; upload the .torrent file or use a magnet that includes your tracker",
-}
-
-// forbidden marks a refusal from torrent-store (stoplist, abuse ban) the way
-// the Touch path does, so the web error handler answers 403 instead of 500.
-func forbidden(err error) error {
-	if status.Code(err) == gcodes.PermissionDenied {
-		return errors.Wrap(err, "forbidden")
-	}
-	return err
 }
 
 // magnetTrackerTorrent builds a synthetic torrent that carries the
@@ -481,19 +472,19 @@ func (s *ResourceMap) getManifest(ctx context.Context, infohash string) (*Resour
 	defer cancel()
 	rep, err := ts.Files(fctx, &tsp.FilesRequest{InfoHash: infohash})
 	if err != nil {
-		if st, ok := status.FromError(err); ok {
-			switch st.Code() {
-			case gcodes.Unimplemented:
-				// torrent-store predates the Files RPC — fall back to the full
-				// pull+parse path so rest-api stays deployable independently of
-				// the store's rollout/rollback.
-				return s.Get(ctx, []byte(infohash))
-			case gcodes.PermissionDenied:
-				// "forbidden" so the web error handler maps to 403, matching get().
-				return nil, errors.Wrap(err, "forbidden")
-			case gcodes.NotFound:
-				return nil, errors.Errorf("not found infoHash=%v", infohash)
-			}
+		// fromStore ahead of the code: a refusal with ErrorInfo comes back as
+		// an apiError, which carries no gRPC code, so whatever code it was
+		// sent with it never becomes the 404 of an unknown hash. A
+		// PermissionDenied without it comes back marked forbidden (403).
+		err = fromStore(err, false)
+		switch status.Code(err) {
+		case gcodes.Unimplemented:
+			// torrent-store predates the Files RPC — fall back to the full
+			// pull+parse path so rest-api stays deployable independently of
+			// the store's rollout/rollback.
+			return s.Get(ctx, []byte(infohash))
+		case gcodes.NotFound:
+			return nil, errors.Errorf("not found infoHash=%v", infohash)
 		}
 		return nil, err
 	}

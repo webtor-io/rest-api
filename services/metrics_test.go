@@ -161,6 +161,8 @@ func TestGRPCOutcome(t *testing.T) {
 		{"unavailable", status.Error(codes.Unavailable, "down"), outcomeError},
 		{"unimplemented", status.Error(codes.Unimplemented, "old store"), outcomeError},
 		{"internal", status.Error(codes.Internal, "boom"), outcomeError},
+		{"store refusal", infoErr(codes.PermissionDenied, "torrent-store", "no_record"), outcomeRefused},
+		{"m2t refusal", infoErr(codes.FailedPrecondition, "magnet2torrent", "private_magnet"), outcomeRefused},
 		{"bare context deadline", context.DeadlineExceeded, outcomeTimeout},
 		{"bare context canceled", context.Canceled, outcomeCanceled},
 		{"plain error", errors.New("dial failed"), outcomeError},

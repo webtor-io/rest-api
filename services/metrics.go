@@ -115,6 +115,9 @@ const (
 	outcomeTimeout   = "timeout"
 	outcomeCanceled  = "canceled"
 	outcomeError     = "error"
+	// A status with ErrorInfo from torrent-store or magnet2torrent: a refusal
+	// by rule (sign_in, private_magnet, ...), not a failure of the upstream.
+	outcomeRefused = "refused"
 )
 
 // routeLabel is the matched route template, so /resource/<hash>/list from a
@@ -196,6 +199,9 @@ func grpcOutcome(err error) string {
 	}
 	if errors.Is(err, context.Canceled) {
 		return outcomeCanceled
+	}
+	if _, ok := errorInfoReason(err); ok {
+		return outcomeRefused
 	}
 	switch status.Code(err) {
 	case codes.NotFound:
