@@ -53,16 +53,19 @@ type Web struct {
 	c    *List
 	e    *Export
 	st   *SpeedTest
+	// secret verifies X-Token (EXPORT_API_SECRET): who calls is read from it.
+	secret string
 }
 
 func NewWeb(c *cli.Context, rm *ResourceMap, co *List, ex *Export, st *SpeedTest) *Web {
 	return &Web{
-		host: c.String(webHostFlag),
-		port: c.Int(webPortFlag),
-		rm:   rm,
-		c:    co,
-		e:    ex,
-		st:   st,
+		host:   c.String(webHostFlag),
+		port:   c.Int(webPortFlag),
+		rm:     rm,
+		c:      co,
+		e:      ex,
+		st:     st,
+		secret: c.String(exportApiSecretFlag),
 	}
 }
 
@@ -108,17 +111,33 @@ func (s *Web) postResource(g *gin.Context) {
 		g.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
-	r, err := s.rm.Get(g.Request.Context(), bb)
+	ctx := g.Request.Context()
+	u := readClaims(g, s.secret).uploader()
+	r, err := s.rm.parse(bb)
 	if err != nil {
 		g.Error(err)
 		return
 	}
-	rr := &ResourceResponse{
-		ID:        r.ID,
-		Name:      r.Name,
-		MagnetURI: r.MagnetURI,
+	res := r
+	if r.Type == ResourceTypeTorrent && r.Private {
+		// Pushed here, with this caller, on every upload: the record is
+		// theirs, and the resource cache is shared between callers. The
+		// answer is the parsed torrent, stripped of its trackers.
+		if _, err := s.rm.pushPrivate(ctx, bb, u); err != nil {
+			g.Error(err)
+			return
+		}
+	} else if res, _, err = s.rm.GetAs(ctx, bb, u); err != nil {
+		g.Error(err)
+		return
 	}
-	s.fillResourceStructure(rr, r)
+	rr := &ResourceResponse{
+		ID:        res.ID,
+		Name:      res.Name,
+		MagnetURI: res.MagnetURI,
+		Private:   res.Private,
+	}
+	s.fillResourceStructure(rr, res)
 	g.PureJSON(http.StatusOK, rr)
 }
 
@@ -422,6 +441,16 @@ func (s *Web) Serve() error {
 	}
 	r := newRouter()
 	r.Use(s.errorHandler)
+	s.routes(r)
+
+	docs.SwaggerInfo.BasePath = "/"
+	log.Infof("serving Web at %v", addr)
+	return http.Serve(s.ln, r)
+}
+
+// routes registers every route Serve serves; tests run them behind the same
+// middleware.
+func (s *Web) routes(r *gin.Engine) {
 	rg := r.Group("/resource")
 	{
 		rg.POST("/", s.postResource)
@@ -433,10 +462,6 @@ func (s *Web) Serve() error {
 		r.GET("/speedtest", s.getSpeedtest)
 	}
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-
-	docs.SwaggerInfo.BasePath = "/"
-	log.Infof("serving Web at %v", addr)
-	return http.Serve(s.ln, r)
 }
 
 // @Summary Returns speed test urls

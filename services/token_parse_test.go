@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -21,8 +20,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
-	log "github.com/sirupsen/logrus"
 	"github.com/webtor-io/lazymap"
 )
 
@@ -382,46 +379,17 @@ func tokenNodes(t *testing.T) *NodesStat {
 	return ns
 }
 
-// tokenRouter is rest-api's router for export and /speedtest over a
-// one-file torrent, configured as production is (secret, subdomains).
+// tokenRouter is newPrivateWeb's router with a public one-file torrent in
+// the manifest cache under tokenTestHash.
 func tokenRouter(t *testing.T) http.Handler {
 	t.Helper()
-	gin.SetMode(gin.TestMode)
-	prevGin, prevLog := gin.DefaultWriter, log.StandardLogger().Out
-	gin.DefaultWriter = io.Discard
-	log.SetOutput(io.Discard)
-	t.Cleanup(func() {
-		gin.DefaultWriter = prevGin
-		log.SetOutput(prevLog)
-	})
-
-	ns := tokenNodes(t)
-	ub := &URLBuilder{
-		sd:                NewSubdomains(ns),
-		cm:                newTestCacheMap(&http.Client{Transport: noNetwork{}}, time.Second),
-		domain:            tokenTestDomain,
-		apiSecret:         tokenTestSecret,
-		apiRole:           "free",
-		useSubdomains:     true,
-		subdomainsK8SPool: "seeder",
-		pathPrefix:        "/",
-	}
-	st := &SpeedTest{nsp: ns, domain: tokenTestDomain, apiSecret: tokenTestSecret, apiRole: "free",
-		useSubdomains: true, subdomainsK8SPool: "seeder"}
-	rm := NewTestResourceMap()
+	h, w, _, _ := newPrivateWeb(t, false)
 	res := &Resource{ID: tokenTestHash, Name: "Sintel", Type: ResourceTypeSha1,
 		Files: []*File{{Path: []string{"Sintel", "Sintel.mp4"}, Size: 1000}}}
-	if _, err := rm.manifests.Get(tokenTestHash, func() (*Resource, error) { return res, nil }); err != nil {
+	if _, err := w.rm.manifests.Get(tokenTestHash, func() (*Resource, error) { return res, nil }); err != nil {
 		t.Fatal(err)
 	}
-	list := NewList()
-	w := &Web{rm: rm, c: list, st: st,
-		e: NewExport(NewDownloadExporter(ub), NewStreamExporter(ub, NewTagBuilder(ub, list)))}
-	r := newRouter()
-	r.Use(w.errorHandler)
-	r.GET("/resource/:resource_id/export/:content_id", w.getExport)
-	r.GET("/speedtest", w.getSpeedtest)
-	return r
+	return h
 }
 
 // tokenGet runs a request with tok in ?token= (header false) or in X-Token.
