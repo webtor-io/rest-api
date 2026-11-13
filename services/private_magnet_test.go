@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -56,7 +55,7 @@ func resolvedPrivate(t *testing.T) []byte {
 // A magnet without tr= that magnet2torrent resolves to a BEP 27 private
 // torrent nobody uploaded is refused with 422 and nothing reaches
 // torrent-store: stored bare, it would be served with no tracker to every
-// later magnet for the hash. The uploader's .torrent is accepted right after.
+// later magnet for the hash.
 func TestPostResourceBarePrivateMagnetRefused(t *testing.T) {
 	priv := privateTorrent(t)
 	magnet := "magnet:?xt=urn:btih:" + mustInfoHash(t, priv) + "&dn=probe"
@@ -69,7 +68,7 @@ func TestPostResourceBarePrivateMagnetRefused(t *testing.T) {
 	ts.On("Touch", any3...).Return(nil, status.Error(codes.NotFound, "not found"))
 	m2t.On("Magnet2Torrent", any3...).Return(&m2tp.Magnet2TorrentReply{Torrent: resolvedPrivate(t)}, nil).Once()
 	// Stubbed, so a push is counted rather than failing as an unexpected call.
-	ts.On("Push", any3...).Return(nil, nil)
+	ts.On("Push", any3...).Return(&tsp.PushReply{RecordOutcome: "inserted"}, nil)
 
 	rec := postResource(t, rm, []byte(magnet))
 
@@ -77,21 +76,18 @@ func TestPostResourceBarePrivateMagnetRefused(t *testing.T) {
 	assert.JSONEq(t, privateMagnetBody, rec.Body.String())
 	ts.AssertNumberOfCalls(t, "Push", 0)
 	m2t.AssertExpectations(t)
-
-	// The refusal is remembered for bare magnets only: the .torrent goes through.
-	rec = postResource(t, rm, priv)
-	assert.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	ts.AssertNumberOfCalls(t, "Push", 1)
 }
 
 // A magnet that carries the user's own tr= is accepted for a private torrent
-// nobody uploaded: the resolved info dict is pushed with those trackers and
-// the answer is 200, stripped of them like any private torrent's.
+// nobody uploaded: magnet2torrent's payload, which carries those trackers, is
+// pushed as is and the answer is 200, stripped of them like any private
+// torrent's.
 func TestPostResourcePrivateMagnetWithTrackersPushed(t *testing.T) {
 	priv := privateTorrent(t)
 	const tr = "http://user.invalid/announce?passkey=0123456789abcdef0123456789abcdef"
 	ih := mustInfoHash(t, priv)
 	magnet := "magnet:?xt=urn:btih:" + ih + "&tr=" + url.QueryEscape(tr)
+	payload := torrentWithTiers(t, resolvedPrivate(t), [][]string{{tr}})
 	any3 := []any{mock.Anything, mock.Anything, mock.Anything}
 
 	rm := NewTestResourceMap()
@@ -99,11 +95,10 @@ func TestPostResourcePrivateMagnetWithTrackersPushed(t *testing.T) {
 	m2tcl, _ := rm.m2t.Get()
 	ts, m2t := tscl.(*TorrentStoreClientMock), m2tcl.(*Magnet2TorrentClientMock)
 	ts.On("Touch", any3...).Return(nil, status.Error(codes.NotFound, "not found"))
-	m2t.On("Magnet2Torrent", any3...).Return(&m2tp.Magnet2TorrentReply{Torrent: resolvedPrivate(t)}, nil).Once()
+	m2t.On("Magnet2Torrent", any3...).Return(&m2tp.Magnet2TorrentReply{Torrent: payload}, nil).Once()
 	ts.On("Push", mock.Anything, mock.MatchedBy(func(in *tsp.PushRequest) bool {
-		mi, err := metainfo.Load(bytes.NewReader(in.Torrent))
-		return err == nil && mi.Announce == tr && mi.HashInfoBytes().HexString() == ih
-	}), mock.Anything).Return(nil, nil).Once()
+		return bytes.Equal(in.Torrent, payload)
+	}), mock.Anything).Return(&tsp.PushReply{RecordOutcome: "inserted"}, nil).Once()
 
 	rec := postResource(t, rm, []byte(magnet))
 
@@ -198,29 +193,31 @@ func pushedWith(tracker string) any {
 // A .torrent or a magnet with a tracker that arrives while a bare magnet for
 // the same unknown infohash is being resolved shares that lazymap loader, and
 // so its refusal. Neither is refused by get, so each is then run on its own
-// and pushed instead of being answered 422.
-func TestResourceMapJoinerOfRefusedBareMagnetPushed(t *testing.T) {
+// instead of being answered 422: the magnet is pushed, the .torrent is left
+// to the handler.
+func TestResourceMapJoinerOfRefusedBareMagnetRerun(t *testing.T) {
 	priv := privateTorrent(t)
 	bare := "magnet:?xt=urn:btih:" + mustInfoHash(t, priv)
 	any3 := []any{mock.Anything, mock.Anything, mock.Anything}
 	for _, tc := range []struct {
-		name string
-		body []byte
+		name   string
+		body   []byte
+		pushes bool
 	}{
-		{".torrent", priv},
-		{"magnet with tr=", []byte(bare + "&tr=" + url.QueryEscape(passkeyTracker))},
+		{".torrent", priv, false},
+		{"magnet with tr=", []byte(bare + "&tr=" + url.QueryEscape(passkeyTracker)), true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rm := NewTestResourceMap()
 			ts, m2t := resourceMapMocks(rm)
 			ts.On("Touch", any3...).Return(nil, status.Error(codes.NotFound, "not found"))
-			started, release := make(chan struct{}), make(chan struct{})
-			var once sync.Once
-			m2t.On("Magnet2Torrent", any3...).Run(func(mock.Arguments) {
-				once.Do(func() { close(started) })
-				<-release
-			}).Return(&m2tp.Magnet2TorrentReply{Torrent: resolvedPrivate(t)}, nil)
-			ts.On("Push", mock.Anything, pushedWith(passkeyTracker), mock.Anything).Return(nil, nil).Once()
+			// The bare magnet is refused for its own lack of tr=, whatever
+			// magnet2torrent returns.
+			started, release := blockingM2T(m2t, torrentWithTiers(t, resolvedPrivate(t), [][]string{{passkeyTracker}}))
+			if tc.pushes {
+				ts.On("Push", mock.Anything, pushedWith(passkeyTracker), mock.Anything).
+					Return(&tsp.PushReply{RecordOutcome: "inserted"}, nil).Once()
+			}
 
 			bareErr, joinedErr := make(chan error, 1), make(chan error, 1)
 			go func() {
@@ -274,12 +271,9 @@ func TestResourceMapPrivateRefusalRemembered(t *testing.T) {
 		}, errPrivateMagnet, 1, false},
 		{"magnet with tr= resolves and pushes", withTr, func(ts *TorrentStoreClientMock, _ *Magnet2TorrentClientMock) {
 			ts.On("Touch", any3...).Return(nil, notFound)
-			ts.On("Push", mock.Anything, pushedWith(passkeyTracker), mock.Anything).Return(nil, nil).Once()
+			ts.On("Push", mock.Anything, pushedWith(passkeyTracker), mock.Anything).
+				Return(&tsp.PushReply{RecordOutcome: "inserted"}, nil).Once()
 		}, nil, 2, true},
-		{".torrent pushes", priv, func(ts *TorrentStoreClientMock, _ *Magnet2TorrentClientMock) {
-			ts.On("Touch", any3...).Return(nil, notFound)
-			ts.On("Push", mock.Anything, pushedWith(passkeyTracker), mock.Anything).Return(nil, nil).Once()
-		}, nil, 1, true},
 		// Uploaded meanwhile, through another replica for all this one knows.
 		{"bare retry, stored meanwhile", bare, func(ts *TorrentStoreClientMock, _ *Magnet2TorrentClientMock) {
 			ts.On("Touch", any3...).Return(nil, notFound).Once()
@@ -291,7 +285,11 @@ func TestResourceMapPrivateRefusalRemembered(t *testing.T) {
 			rm := NewTestResourceMap()
 			ts, m2t := resourceMapMocks(rm)
 			tc.setup(ts, m2t)
-			m2t.On("Magnet2Torrent", any3...).Return(&m2tp.Magnet2TorrentReply{Torrent: resolvedPrivate(t)}, nil)
+			// As the new magnet2torrent answers a magnet with tr=; the bare
+			// one is refused for its own lack of tr= whatever comes back.
+			m2t.On("Magnet2Torrent", any3...).Return(&m2tp.Magnet2TorrentReply{
+				Torrent: torrentWithTiers(t, resolvedPrivate(t), [][]string{{passkeyTracker}}),
+			}, nil)
 
 			_, err := rm.Get(context.Background(), bare)
 			require.ErrorIs(t, err, errPrivateMagnet)

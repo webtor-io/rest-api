@@ -37,6 +37,7 @@ type Resource struct {
 	Type      ResourceType
 	MagnetURI string
 	Torrent   []byte
+	Private   bool // BEP 27 flag; always known
 }
 
 type File struct {
@@ -190,13 +191,14 @@ func (s *ResourceMap) parseTorrent(b []byte) (*Resource, error) {
 		})
 	}
 	r.Torrent = b
+	r.Private = i.Private != nil && *i.Private
 	// A BEP 27 private torrent carries the uploader's passkey in its
 	// trackers, and torrent-store keeps one record per infohash that anyone
 	// knowing the infohash reads back through here. So the .torrent and the
 	// magnet go out without announce, announce-list and url-list, for
 	// everyone — the uploader has the original file. torrent-store is always
 	// pushed the caller's bytes, never r.Torrent.
-	if i.Private != nil && *i.Private {
+	if r.Private {
 		mi.Announce, mi.AnnounceList, mi.UrlList = "", nil, nil
 		var buf bytes.Buffer
 		if err := mi.Write(&buf); err != nil {
@@ -247,7 +249,18 @@ func (s *ResourceMap) parse(b []byte) (*Resource, error) {
 	}
 }
 
-func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource, error) {
+// internalCaller is how the loaders and getManifest read torrent-store: their
+// result is shared between requests and cached, so who may see a private hash
+// is asked per request (Touch with that request's Caller), never here.
+func internalCaller() *tsp.Caller { return &tsp.Caller{Internal: true} }
+
+// caller is the Caller of a Push made for u: its uid, never internal.
+func (u Uploader) caller() *tsp.Caller { return &tsp.Caller{Uid: u.UID} }
+
+// loadNote is what GetAs learns about the loader run behind its answer.
+type loadNote struct{ ran, resolved bool } // ran: this request's closure ran; resolved: it took the magnet2torrent branch
+
+func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte, u Uploader, note *loadNote) (*Resource, error) {
 	ts, err := s.ts.Get()
 	if err != nil {
 		return nil, err
@@ -255,7 +268,7 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 	found := true
 	touchCtx, touchCancel := context.WithTimeout(ctx, s.torrentStoreTimeout)
 	defer touchCancel()
-	_, err = ts.Touch(touchCtx, &tsp.TouchRequest{InfoHash: r.ID})
+	_, err = ts.Touch(touchCtx, &tsp.TouchRequest{InfoHash: r.ID, Caller: internalCaller()})
 	if err != nil {
 		// fromStore first, as in getManifest: a refusal is never "not found".
 		if err = fromStore(err, false); status.Code(err) != gcodes.NotFound {
@@ -270,19 +283,24 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 		}
 		pullCtx, pullCancel := context.WithTimeout(ctx, s.torrentStoreTimeout)
 		defer pullCancel()
-		rep, err := ts.Pull(pullCtx, &tsp.PullRequest{InfoHash: r.ID})
+		rep, err := ts.Pull(pullCtx, &tsp.PullRequest{InfoHash: r.ID, Caller: internalCaller()})
 		if err != nil {
 			return nil, fromStore(err, false)
 		}
 		return s.parseTorrent(rep.GetTorrent())
 
 	case ResourceTypeTorrent:
+		// A private .torrent is pushed by the handler, on every request and
+		// with that request's caller: what this returns is shared and cached.
+		if r.Private {
+			return r, nil
+		}
 		// Always push: torrent-store merges announces/url-list with whatever
 		// already exists, so re-uploading a .torrent with fresher trackers
 		// extends the swarm instead of being silently dropped.
 		pushCtx, pushCancel := context.WithTimeout(ctx, s.torrentStoreTimeout)
 		defer pushCancel()
-		if _, err := ts.Push(pushCtx, &tsp.PushRequest{Torrent: b}); err != nil {
+		if _, err := ts.Push(pushCtx, &tsp.PushRequest{Torrent: b, Caller: u.caller(), Source: u.Source}); err != nil {
 			return nil, fromStore(err, true)
 		}
 		s.privateRefusals.Drop(r.ID)
@@ -292,7 +310,7 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 		if found {
 			pullCtx, pullCancel := context.WithTimeout(ctx, s.torrentStoreTimeout)
 			defer pullCancel()
-			rep, err := ts.Pull(pullCtx, &tsp.PullRequest{InfoHash: r.ID})
+			rep, err := ts.Pull(pullCtx, &tsp.PullRequest{InfoHash: r.ID, Caller: internalCaller()})
 			if err != nil {
 				return nil, fromStore(err, false)
 			}
@@ -305,7 +323,7 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 			if extra := magnetTrackerTorrent(b, rep.GetTorrent()); extra != nil && !isPrivate(rep.GetTorrent()) {
 				pushCtx, pushCancel := context.WithTimeout(ctx, s.torrentStoreTimeout)
 				defer pushCancel()
-				_, _ = ts.Push(pushCtx, &tsp.PushRequest{Torrent: extra})
+				_, _ = ts.Push(pushCtx, &tsp.PushRequest{Torrent: extra, Caller: u.caller(), Source: sourceMagnet})
 			}
 			return s.parseTorrent(rep.GetTorrent())
 		}
@@ -314,6 +332,7 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 		if st, _ := s.privateRefusals.Status(r.ID); st == lazymap.Done && bareMagnet(r, b) {
 			return nil, errPrivateMagnet
 		}
+		note.resolved = true
 		m2t, err := s.m2t.Get()
 		if err != nil {
 			return nil, err
@@ -333,18 +352,13 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 			}
 			return nil, err
 		}
-		private := isPrivate(rep.GetTorrent())
-		magnetResolvedTotal.WithLabelValues(strconv.FormatBool(private)).Inc()
-		// Inject the magnet's tr= trackers before pushing — m2t strips them
-		// during DHT metadata exchange, leaving the .torrent trackerless.
 		payload := rep.GetTorrent()
-		augmented := magnetTrackerTorrent(b, payload)
+		private := isPrivate(payload)
+		magnetResolvedTotal.WithLabelValues(strconv.FormatBool(private)).Inc()
 		// A private torrent works only through trackers (BEP 27 rules out DHT
-		// and PEX), and the resolved result has none. A magnet carrying the
-		// user's own tr= is pushed with them, as for any torrent. A bare one
-		// would be stored trackerless and served that way to every later
-		// magnet for the hash, so nothing is pushed and the caller is told
-		// to upload the .torrent or bring a tracker.
+		// and PEX). A bare magnet would be stored trackerless and served that
+		// way to every later magnet for the hash, so nothing is pushed and
+		// the caller is told to upload the .torrent or bring a tracker.
 		//
 		// This is decided before torrent-store's stoplist and abuse gates,
 		// which only Push applies: a blocked private hash is answered 422
@@ -354,10 +368,21 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 			_, _ = s.privateRefusals.Get(r.ID, func() (bool, error) { return true, nil })
 			return nil, errPrivateMagnet
 		}
-		if augmented != nil {
+		// A private magnet with tr= comes back from magnet2torrent with them
+		// as one tier, and goes to torrent-store as is, for this request's
+		// caller: their record is made from it.
+		if private {
+			if _, err := s.pushPrivate(ctx, payload, Uploader{u.UID, sourceMagnet}); err != nil {
+				return nil, err
+			}
+			return s.parseTorrent(payload)
+		}
+		// Inject the magnet's tr= trackers before pushing — m2t strips them
+		// during DHT metadata exchange, leaving the .torrent trackerless.
+		if augmented := magnetTrackerTorrent(b, payload); augmented != nil {
 			payload = augmented
 		}
-		_, err = ts.Push(ctx, &tsp.PushRequest{Torrent: payload})
+		_, err = ts.Push(ctx, &tsp.PushRequest{Torrent: payload, Caller: u.caller(), Source: sourceMagnet})
 		if err != nil {
 			return nil, fromStore(err, true)
 		}
@@ -366,6 +391,50 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 	}
 	return nil, nil
 }
+
+// pushPrivate pushes the bytes of a private torrent for u and returns the
+// store's record outcome. Never dry_run. A refusal by rule (ErrorInfo, or
+// PermissionDenied: the stoplist) is answered as the store said; anything
+// else, or a store that predates records (no outcome), is a 503.
+func (s *ResourceMap) pushPrivate(ctx context.Context, torrent []byte, u Uploader) (outcome string, err error) {
+	label := "failed"
+	defer func() { privateUploadsTotal.WithLabelValues(u.Source, label).Inc() }()
+	ts, err := s.ts.Get()
+	if err != nil {
+		return "", errStoreUnavailable
+	}
+	pushCtx, cancel := context.WithTimeout(ctx, s.torrentStoreTimeout)
+	defer cancel()
+	rep, err := ts.Push(pushCtx, &tsp.PushRequest{Torrent: torrent, Caller: u.caller(), Source: u.Source})
+	if err != nil {
+		// An ErrorInfo reason this version does not know reads as a status
+		// without one: fromStore leaves it as it came, and it is a 503.
+		var ae *apiError
+		if err = fromStore(err, true); errors.As(err, &ae) || status.Code(err) == gcodes.PermissionDenied {
+			label = "refused"
+			return "", err
+		}
+		return "", errStoreUnavailable
+	}
+	switch outcome = rep.GetRecordOutcome(); outcome {
+	case "":
+		label = "outdated"
+		return "", errStoreOutdated
+	case "inserted", "updated":
+		label = outcome
+	default:
+		label = "unchanged"
+	}
+	if mi, err := metainfo.Load(bytes.NewReader(torrent)); err == nil {
+		s.privateRefusals.Drop(mi.HashInfoBytes().HexString())
+	}
+	return outcome, nil
+}
+
+var (
+	errStoreUnavailable = &apiError{Status: http.StatusServiceUnavailable, Msg: "torrent store unavailable"}
+	errStoreOutdated    = &apiError{Status: http.StatusServiceUnavailable, Code: codeStoreOutdated, Msg: "torrent store is outdated"}
+)
 
 // errPrivateMagnet refuses a magnet with no tracker (bareMagnet) for a BEP 27
 // private torrent that is not stored yet: 422 private_magnet. web-ui keys on
@@ -433,21 +502,34 @@ func isPrivate(torrent []byte) bool {
 }
 
 func (s *ResourceMap) Get(ctx context.Context, b []byte) (*Resource, error) {
+	res, _, err := s.GetAs(ctx, b, Uploader{Source: sourceSite})
+	return res, err
+}
+
+// GetAs loads b; resolvedHere reports that this request's loader resolved an unknown magnet and pushed it with u.
+func (s *ResourceMap) GetAs(ctx context.Context, b []byte, u Uploader) (res *Resource, resolvedHere bool, err error) {
 	r, err := s.parse(b)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	res, err := s.LazyMap.Get(r.ID, func() (*Resource, error) {
-		return s.get(ctx, r, b)
+	// The closure may run on another request's goroutine (lazymap lets a
+	// waiter run it while its creator waits for a slot); note is read only
+	// after LazyMap.Get returns.
+	note := &loadNote{}
+	res, err = s.LazyMap.Get(r.ID, func() (*Resource, error) {
+		note.ran = true
+		return s.get(ctx, r, b, u, note)
 	})
-	// Requests for one infohash share a loader, so this one may carry the
-	// refusal of a bare magnet that started it. get refuses only bare
-	// magnets: anything else (a .torrent, a magnet with a tracker) got
-	// another request's answer and is run on its own.
-	if errors.Is(err, errPrivateMagnet) && !bareMagnet(r, b) {
-		return s.get(ctx, r, b)
+	// Requests for one infohash share a loader, so this one may carry a
+	// refusal made for whoever started it: a bare magnet's, or the store's
+	// answer to that caller. Decision 40: a request whose own loader did not
+	// run is run again on its own; a bare one gets the remembered refusal.
+	var ae *apiError
+	if !note.ran && errors.As(err, &ae) {
+		note = &loadNote{ran: true}
+		res, err = s.get(ctx, r, b, u, note)
 	}
-	return res, err
+	return res, note.resolved, err
 }
 
 // GetManifest returns a lightweight Resource (ID + Name + Files, no piece
@@ -470,7 +552,7 @@ func (s *ResourceMap) getManifest(ctx context.Context, infohash string) (*Resour
 	}
 	fctx, cancel := context.WithTimeout(ctx, s.torrentStoreTimeout)
 	defer cancel()
-	rep, err := ts.Files(fctx, &tsp.FilesRequest{InfoHash: infohash})
+	rep, err := ts.Files(fctx, &tsp.FilesRequest{InfoHash: infohash, Caller: internalCaller()})
 	if err != nil {
 		// fromStore ahead of the code: a refusal with ErrorInfo comes back as
 		// an apiError, which carries no gRPC code, so whatever code it was
@@ -488,10 +570,16 @@ func (s *ResourceMap) getManifest(ctx context.Context, infohash string) (*Resour
 		}
 		return nil, err
 	}
+	// A store that predates the flag, or a manifest cached before it, says
+	// nothing: that never means public, so the torrent itself is read.
+	if rep.Private == nil {
+		return s.Get(ctx, []byte(infohash))
+	}
 	r := &Resource{
-		ID:   infohash,
-		Name: rep.GetName(),
-		Type: ResourceTypeSha1,
+		ID:      infohash,
+		Name:    rep.GetName(),
+		Type:    ResourceTypeSha1,
+		Private: *rep.Private,
 	}
 	for _, f := range rep.GetFiles() {
 		// Same normalisation as parseTorrent: the manifest is the path

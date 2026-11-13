@@ -89,6 +89,18 @@ var (
 		Name:      "resolved_total",
 		Help:      "Magnets resolved by magnet2torrent for an infohash torrent-store did not have, by the info dict's BEP 27 private flag.",
 	}, []string{"private"})
+
+	// Pushes of BEP 27 private torrents with the caller's uid (pushPrivate):
+	// an uploaded .torrent, or a magnet with tr= of an unknown hash. outcome
+	// is the store's record outcome (another non-empty one is unchanged),
+	// refused (ErrorInfo or PermissionDenied), failed (any other error) or
+	// outdated (no outcome: a store that predates private records).
+	privateUploadsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: metricsNamespace,
+		Subsystem: "private",
+		Name:      "uploads_total",
+		Help:      "Private torrent pushes to torrent-store with the caller's uid, by upload source and outcome.",
+	}, []string{"source", "outcome"})
 )
 
 func init() {
@@ -97,6 +109,11 @@ func init() {
 	// resolution, and private="true" is rare enough for that to matter.
 	for _, private := range []string{"true", "false"} {
 		magnetResolvedTotal.WithLabelValues(private)
+	}
+	for _, source := range []string{sourceSite, sourceRapidAPI, sourceMagnet} {
+		for _, outcome := range []string{"inserted", "updated", "unchanged", "refused", "failed", "outdated"} {
+			privateUploadsTotal.WithLabelValues(source, outcome)
+		}
 	}
 }
 

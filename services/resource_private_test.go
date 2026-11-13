@@ -71,6 +71,8 @@ func TestParseTorrentPublicKeepsBytes(t *testing.T) {
 // stripped. A magnet for a stored private torrent pushes nothing: its tr= is
 // not the uploader's .torrent and could lock out the real trackers. A magnet
 // without tr= for an unstored one is refused (TestPostResourceBarePrivateMagnetRefused).
+// The loader never pushes an uploaded private .torrent: the handler does, on
+// every request, with the caller (TestPrivateTorrentNotPushedByLoader).
 func TestResourceMapPrivatePushesOriginal(t *testing.T) {
 	priv := privateTorrent(t)
 	id := "magnet:?xt=urn:btih:" + mustInfoHash(t, priv)
@@ -84,7 +86,7 @@ func TestResourceMapPrivatePushesOriginal(t *testing.T) {
 		pushes bool
 		setup  func(ts *TorrentStoreClientMock, m2t *Magnet2TorrentClientMock)
 	}{
-		{"uploaded torrent", priv, true, func(ts *TorrentStoreClientMock, _ *Magnet2TorrentClientMock) {
+		{"uploaded torrent", priv, false, func(ts *TorrentStoreClientMock, _ *Magnet2TorrentClientMock) {
 			ts.On("Touch", any3...).Return(nil, notFound)
 		}},
 		{"stored magnet", []byte(squat), false, func(ts *TorrentStoreClientMock, _ *Magnet2TorrentClientMock) {
@@ -105,7 +107,7 @@ func TestResourceMapPrivatePushesOriginal(t *testing.T) {
 			if tc.pushes {
 				ts.On("Push", mock.Anything, mock.MatchedBy(func(in *tsp.PushRequest) bool {
 					return strings.Contains(string(in.Torrent), passkeyTracker)
-				}), mock.Anything).Return(nil, nil).Once()
+				}), mock.Anything).Return(&tsp.PushReply{RecordOutcome: "inserted"}, nil).Once()
 			}
 			r, err := rm.Get(context.Background(), tc.body)
 			require.NoError(t, err)

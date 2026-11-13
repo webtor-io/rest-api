@@ -87,7 +87,7 @@ func TestMagnetResolvedTotal(t *testing.T) {
 				} else {
 					m2t.On("Magnet2Torrent", any3...).Return(&m2tp.Magnet2TorrentReply{Torrent: tc.torrent}, nil)
 					// What is pushed is not this test's business.
-					ts.On("Push", any3...).Return(nil, nil).Maybe()
+					ts.On("Push", any3...).Return(&tsp.PushReply{RecordOutcome: "inserted"}, nil).Maybe()
 				}
 			}
 			privC, pubC := magnetResolvedTotal.WithLabelValues("true"), magnetResolvedTotal.WithLabelValues("false")
