@@ -1,7 +1,10 @@
 package services
 
 import (
+	"bytes"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/stretchr/testify/assert"
@@ -48,22 +51,27 @@ func mockInternal(ts *TorrentStoreClientMock, method, uid string, err error) {
 }
 
 func TestInternalEndpointsNeedInternal(t *testing.T) {
+	internal := jwt.MapClaims{"internal": true}
 	for _, tc := range []struct {
-		name   string
-		claims jwt.MapClaims // nil: no X-Token
+		name  string
+		token string // X-Token
+		query string // ?token=
 	}{
-		{"no token", nil},
-		{"user", jwt.MapClaims{"uid": uidA}},
-		{"internal false", jwt.MapClaims{"internal": false}},
+		{"no token", "", ""},
+		{"user", signed(t, jwt.MapClaims{"uid": uidA}), ""},
+		{"internal false", signed(t, jwt.MapClaims{"internal": false}), ""},
+		// internal counts only from X-Token signed with our secret
+		{"internal in query", "", signed(t, internal)},
+		{"foreign secret", signedWith(t, internal, "other"), ""},
 	} {
 		for _, method := range internalMethods {
 			t.Run(tc.name+"/"+method, func(t *testing.T) {
 				h, _, ts, _ := newPrivateWeb(t, true)
-				tok := ""
-				if tc.claims != nil {
-					tok = signed(t, tc.claims)
+				target := "/internal/private-trackers/" + uidA
+				if tc.query != "" {
+					target += "?token=" + tc.query
 				}
-				rec := send(t, h, method, "/internal/private-trackers/"+uidA, tok, nil)
+				rec := send(t, h, method, target, tc.token, nil)
 				require.Equal(t, 403, rec.Code, rec.Body.String())
 				assert.Equal(t, ErrorResponse{Error: "internal only"}, errorBody(t, rec))
 				assert.Empty(t, storeMethods(ts))
@@ -141,4 +149,27 @@ func TestInternalEndpointsErrors(t *testing.T) {
 		require.Equal(t, 200, rec.Code, rec.Body.String())
 		assert.JSONEq(t, "[]", rec.Body.String()) // not null
 	})
+}
+
+// The uid in the path never reaches the access log: rest-api logs show an
+// account only as acct=.
+func TestInternalEndpointsNotInAccessLog(t *testing.T) {
+	_, w, ts, _ := newPrivateWeb(t, true) // its cleanup restores gin.DefaultWriter
+	// gin.Logger takes its writer when the router is built.
+	var access bytes.Buffer
+	gin.DefaultWriter = &access
+	h := newRouter()
+	h.Use(w.errorHandler)
+	w.routes(h)
+
+	internal := signed(t, jwt.MapClaims{"internal": true})
+	for _, method := range internalMethods {
+		mockInternal(ts, method, uidA, nil)
+		rec := send(t, h, method, "/internal/private-trackers/"+uidA, internal, nil)
+		require.Equal(t, 200, rec.Code, rec.Body.String())
+	}
+	send(t, h, "GET", "/control-line", "", nil)
+	require.Contains(t, access.String(), "/control-line", "the access log must still be written")
+	assert.NotContains(t, access.String(), uidA)
+	ts.AssertExpectations(t)
 }

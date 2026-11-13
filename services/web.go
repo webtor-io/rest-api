@@ -424,12 +424,19 @@ func logPanic(c *gin.Context, value any, stack []byte) {
 	panicsTotal.WithLabelValues(routeLabel(c)).Inc()
 }
 
+// skipAccessLog keeps /internal/ requests out of the access log: their path
+// carries a uid, and rest-api logs show an account only as acct=. They are
+// still counted by route in httpMetrics, and their errors are logged.
+func skipAccessLog(c *gin.Context) bool {
+	return strings.HasPrefix(c.Request.URL.Path, "/internal/")
+}
+
 // newRouter is the middleware stack without routes, shared with tests so the
 // ordering they exercise is the one production runs: metrics wrap recovery
 // (see httpMetrics for why), the error handler sits inside both.
 func newRouter() *gin.Engine {
 	r := gin.New()
-	r.Use(gin.Logger(), httpMetrics(), gin.CustomRecovery(recoverToLog))
+	r.Use(gin.LoggerWithConfig(gin.LoggerConfig{Skip: skipAccessLog}), httpMetrics(), gin.CustomRecovery(recoverToLog))
 	r.UseRawPath = true
 	return r
 }
