@@ -431,6 +431,39 @@ func (s *ResourceMap) pushPrivate(ctx context.Context, torrent []byte, u Uploade
 	return outcome, nil
 }
 
+// touch asks torrent-store whether c may read private torrent h: nil only for
+// access=allowed. One Touch per call and nothing remembered (S15): a deleted
+// record refuses the very next request. A reply without access comes from a
+// store that predates private records and decides nothing.
+func (s *ResourceMap) touch(ctx context.Context, h string, c *tsp.Caller) error {
+	outcome := "unavailable"
+	defer func() { privateLookupsTotal.WithLabelValues(outcome).Inc() }()
+	ts, err := s.ts.Get()
+	if err != nil {
+		return errStoreUnavailable
+	}
+	touchCtx, cancel := context.WithTimeout(ctx, s.torrentStoreTimeout)
+	defer cancel()
+	rep, err := ts.Touch(touchCtx, &tsp.TouchRequest{InfoHash: h, Caller: c})
+	if err == nil {
+		if rep.GetAccess() == "allowed" {
+			outcome = "allowed"
+			return nil
+		}
+		outcome = "outdated"
+		return errStoreOutdated
+	}
+	switch reason, _ := errorInfoReason(err); reason {
+	case reasonSignIn, reasonNoRecord:
+		outcome = "refused"
+		return fromStore(err, false)
+	case codePrivateUnavailable:
+		outcome = "disabled"
+		return fromStore(err, false)
+	}
+	return errStoreUnavailable
+}
+
 var (
 	errStoreUnavailable = &apiError{Status: http.StatusServiceUnavailable, Msg: "torrent store unavailable"}
 	errStoreOutdated    = &apiError{Status: http.StatusServiceUnavailable, Code: codeStoreOutdated, Msg: "torrent store is outdated"}

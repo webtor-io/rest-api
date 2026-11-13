@@ -384,11 +384,7 @@ func tokenNodes(t *testing.T) *NodesStat {
 func tokenRouter(t *testing.T) http.Handler {
 	t.Helper()
 	h, w, _, _ := newPrivateWeb(t, false)
-	res := &Resource{ID: tokenTestHash, Name: "Sintel", Type: ResourceTypeSha1,
-		Files: []*File{{Path: []string{"Sintel", "Sintel.mp4"}, Size: 1000}}}
-	if _, err := w.rm.manifests.Get(tokenTestHash, func() (*Resource, error) { return res, nil }); err != nil {
-		t.Fatal(err)
-	}
+	cachePrivate(t, w, tokenTestHash, false)
 	return h
 }
 
