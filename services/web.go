@@ -512,6 +512,11 @@ func (s *Web) routes(r *gin.Engine) {
 		rg.GET("/:resource_id/list", s.getList)
 		rg.GET("/:resource_id/export/:content_id", s.getExport)
 	}
+	ig := r.Group("/internal/private-trackers")
+	{
+		ig.GET("/:uid", s.listPrivateTrackers)
+		ig.DELETE("/:uid", s.deletePrivateTrackers)
+	}
 	if s.st != nil {
 		r.GET("/speedtest", s.getSpeedtest)
 	}
