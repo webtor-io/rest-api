@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-const verifyPerHour = 20 // tracker checks per uid an hour (S17)
+const verifyPerHour = 20 // tracker checks per uid an hour
 
 // verifyLimiter caps the tracker checks of a uid at verifyPerHour in any
 // hour. Nothing per hash: one user's checks of many hashes count together.

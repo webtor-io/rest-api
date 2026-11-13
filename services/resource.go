@@ -377,8 +377,8 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte, u Uploader
 			}
 			return s.parseTorrent(payload)
 		}
-		// Inject the magnet's tr= trackers before pushing — m2t strips them
-		// during DHT metadata exchange, leaving the .torrent trackerless.
+		// Push the magnet's own tr= as the announce list in place of what
+		// magnet2torrent returned; torrent-store merges them with any it has.
 		if augmented := magnetTrackerTorrent(b, payload); augmented != nil {
 			payload = augmented
 		}
@@ -437,7 +437,7 @@ func (s *ResourceMap) pushPrivate(ctx context.Context, torrent []byte, u Uploade
 }
 
 // touch asks torrent-store whether c may read private torrent h: nil only for
-// access=allowed. One Touch per call and nothing remembered (S15): a deleted
+// access=allowed. One Touch per call and nothing remembered: a deleted
 // record refuses the very next request. A reply without access comes from a
 // store that predates private records and decides nothing.
 func (s *ResourceMap) touch(ctx context.Context, h string, c *tsp.Caller) error {
@@ -563,7 +563,7 @@ func (s *ResourceMap) GetAs(ctx context.Context, b []byte, u Uploader) (res *Res
 	})
 	// Requests for one infohash share a loader, so this one may carry a
 	// refusal made for whoever started it: a bare magnet's, or the store's
-	// answer to that caller. Decision 40: a request whose own loader did not
+	// answer to that caller. A request whose own loader did not
 	// run is run again on its own; a bare one gets the remembered refusal.
 	var ae *apiError
 	if !note.ran && errors.As(err, &ae) {

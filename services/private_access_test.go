@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -80,7 +79,7 @@ func TestPrivateAccessMatrix(t *testing.T) {
 				touches     int
 			}{
 				{"anonymous", signed(t, jwt.MapClaims{}), false, callerIs("", false), touchRefused("sign_in"), 403, "private_torrent", "sign_in", 1},
-				// no X-Token at all (THP's privacy lookup): body reason sign_in, counter label no_token (Р11)
+				// no X-Token at all (THP's privacy lookup): body reason sign_in, counter label no_token
 				{"no token", "", false, callerIs("", false), touchRefused("sign_in"), 403, "private_torrent", "sign_in", 1},
 				{"uid without record", signed(t, jwt.MapClaims{"uid": uidB}), false, callerIs(uidB, false), touchRefused("no_record"), 403, "private_torrent", "no_record", 1},
 				{"uid with record", signed(t, jwt.MapClaims{"uid": uidA}), false, callerIs(uidA, false), touchOK(allowed), 200, "", "", 1},
@@ -238,7 +237,7 @@ func TestPrivateAccessPost(t *testing.T) {
 	}
 }
 
-// Review Focus 4, S15: no allowance is remembered between requests.
+// No allowance is remembered between requests.
 func TestAccessTouchPerRequest(t *testing.T) {
 	h, w, ts, _ := newPrivateWeb(t, true)
 	cachePrivate(t, w, tokenTestHash, true)
@@ -310,18 +309,4 @@ func TestAccessStoreAnswers(t *testing.T) {
 			})
 		}
 	}
-}
-
-// Export's links are served to a uid only: its check never passes internal on (Р8).
-func TestPrivateAllowedExportCaller(t *testing.T) {
-	_, w, ts, _ := newPrivateWeb(t, true)
-	ts.On("Touch", mock.Anything, touchOf(tokenTestHash, callerIs(uidA, false)), mock.Anything).Return(&tsp.TouchReply{Access: "allowed"}, nil).Once()
-	g, _ := gin.CreateTestContext(httptest.NewRecorder())
-	g.Request = httptest.NewRequest("GET", "/resource/"+tokenTestHash+"/export/0", nil)
-	g.Request.Header.Set("X-Token", signed(t, jwt.MapClaims{"uid": uidA, "internal": true}))
-
-	_, err := w.privateAllowed(g, &Resource{ID: tokenTestHash, Private: true}, routeExport)
-
-	require.NoError(t, err)
-	ts.AssertExpectations(t)
 }

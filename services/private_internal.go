@@ -13,7 +13,7 @@ import (
 
 // The internal endpoints are thin wrappers over the torrent-store record
 // RPCs for account export and deletion: one RPC per request, no query
-// parameters, no others (S22). They are not part of the public API.
+// parameters, no others. They are not part of the public API.
 
 // PrivateTrackerRecord is one private record of a user.
 type PrivateTrackerRecord struct {

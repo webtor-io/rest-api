@@ -84,7 +84,7 @@ func TestInternalEndpointsOneRPC(t *testing.T) {
 	h, _, ts, _ := newPrivateWeb(t, true)
 	internal := signed(t, jwt.MapClaims{"internal": true})
 
-	// ?host= is not read: both act on all the user's records (S7).
+	// ?host= is not read: both act on all the user's records.
 	ts.On("ListPrivateRecords", mock.Anything, mock.MatchedBy(func(in *tsp.ListPrivateRecordsRequest) bool { return in.GetUid() == uidA }), mock.Anything).
 		Return(&tsp.ListPrivateRecordsReply{Records: []*tsp.PrivateRecordInfo{{InfoHash: tokenTestHash,
 			Hosts: []string{"tracker.example"}, Source: "site", CreatedAt: 1700000000, UpdatedAt: 1700000100}}}, nil).Once()
@@ -100,7 +100,7 @@ func TestInternalEndpointsOneRPC(t *testing.T) {
 	assert.JSONEq(t, `{"deleted":2}`, rec.Body.String())
 	assert.Equal(t, []string{"ListPrivateRecords", "DeletePrivateRecordsByUser"}, storeMethods(ts))
 
-	// No delete by hash (S22): there is no such route.
+	// No delete by hash: there is no such route.
 	rec = send(t, h, "DELETE", "/internal/private-trackers/by-hash/"+tokenTestHash, internal, nil)
 	assert.Equal(t, 404, rec.Code, rec.Body.String())
 	assert.Len(t, ts.Calls, 2)
@@ -151,8 +151,7 @@ func TestInternalEndpointsErrors(t *testing.T) {
 	})
 }
 
-// The uid in the path never reaches the access log: rest-api logs show an
-// account only as acct=.
+// The uid in the path never reaches the access log.
 func TestInternalEndpointsNotInAccessLog(t *testing.T) {
 	_, w, ts, _ := newPrivateWeb(t, true) // its cleanup restores gin.DefaultWriter
 	// gin.Logger takes its writer when the router is built.

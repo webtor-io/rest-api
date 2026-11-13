@@ -76,7 +76,7 @@ func assertMagnetPush(t *testing.T, in *tsp.PushRequest, uid, ih string, tier []
 	assert.Equal(t, ih, mi.HashInfoBytes().HexString())
 }
 
-// Review Focus 1: a magnet does not change an existing record.
+// A magnet does not change an existing record.
 func TestKnownPrivateMagnetAllowedSkipsVerify(t *testing.T) {
 	h, _, ts, m2t := newPrivateWeb(t, true)
 	knownPrivate(t, ts)
@@ -240,7 +240,7 @@ func TestKnownPrivateMagnetStoreAnswers(t *testing.T) {
 	}
 }
 
-// Review Focus 2: a store that predates records answers Touch without access.
+// A store that predates records answers Touch without access.
 // Nothing is checked or pushed: an old store would merge the magnet's key
 // into the shared copy.
 func TestKnownMagnetOldStore(t *testing.T) {

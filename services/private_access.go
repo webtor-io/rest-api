@@ -53,7 +53,7 @@ func (p resignedParams) GetHeader(k string) string {
 // refuse counts a refusal on route and applies the mode: ae in enforce, nil
 // in observe, where the request goes on as it did before. The label is the
 // code, for private_torrent its reason; a 429 has no code (rate_limited). A
-// sign_in to a request without X-Token is no_token (Р11): THP's privacy
+// sign_in to a request without X-Token is no_token: THP's privacy
 // lookup comes that way, once per node and hash, and would drown the
 // refusals of people. The answer does not change.
 func (s *Web) refuse(g *gin.Context, route string, ae *apiError) error {

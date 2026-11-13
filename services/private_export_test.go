@@ -52,7 +52,7 @@ func TestExportPrivateResigned(t *testing.T) {
 	ts.AssertExpectations(t)
 }
 
-// Export links are served to a uid only (Р8): its check never passes
+// Export links are served to a uid only: its check never passes
 // internal on, although the store allows an internal caller any hash.
 func TestExportNeverInternal(t *testing.T) {
 	allowed := &tsp.TouchReply{Access: "allowed"}

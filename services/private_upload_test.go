@@ -106,7 +106,7 @@ func TestPrivateTorrentUploadAnswers(t *testing.T) {
 		code    string
 		outcome string
 	}{
-		// one store refusal stands for all four: the full table of reasons is TestFromStoreReasons (S32)
+		// one store refusal stands for all four: the full table of reasons is TestFromStoreReasons
 		{"needs account", nil, infoErr(codes.PermissionDenied, "torrent-store", "private_needs_account"), 422, "private_needs_account", "refused"},
 		{"stoplist", nil, status.Error(codes.PermissionDenied, "banned"), 403, "", "refused"},
 		// the store's geometry check: answered as a public .torrent is, never as retryable

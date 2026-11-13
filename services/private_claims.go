@@ -90,7 +90,7 @@ func (c callerClaims) resign(secret, h string, now time.Time) (string, error) {
 }
 
 // uploader: {UID, rapidapi} when Domain == domainRapidAPI, else {UID, site}.
-// No request header is read (S18).
+// No request header is read.
 func (c callerClaims) uploader() Uploader {
 	if c.Domain == domainRapidAPI {
 		return Uploader{c.UID, sourceRapidAPI}

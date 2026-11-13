@@ -450,8 +450,8 @@ func logPanic(c *gin.Context, value any, stack []byte) {
 }
 
 // skipAccessLog keeps /internal/ requests out of the access log: their path
-// carries a uid, and rest-api logs show an account only as acct=. They are
-// still counted by route in httpMetrics, and their errors are logged.
+// carries a uid. They are still counted by route in httpMetrics, and their
+// errors are logged.
 func skipAccessLog(c *gin.Context) bool {
 	return strings.HasPrefix(c.Request.URL.Path, "/internal/")
 }

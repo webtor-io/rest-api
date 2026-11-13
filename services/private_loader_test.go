@@ -278,7 +278,7 @@ func TestPrivateTorrentNotPushedByLoader(t *testing.T) {
 	ts.AssertNotCalled(t, "Push", any3...)
 }
 
-// Decision 40: the anonymous creator's refusal does not reach a signed-in waiter.
+// The anonymous creator's refusal does not reach a signed-in waiter.
 func TestCallerRefusalNotSharedWithWaiters(t *testing.T) {
 	magnet := []byte(privateMagnet(t, trA))
 	rm := NewTestResourceMap()
