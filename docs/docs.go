@@ -21,7 +21,7 @@ const docTemplate = `{
     "paths": {
         "/resource/": {
             "post": {
-                "description": "Receives torrent or magnet-uri in request body.\nIf magnet-uri provided instead of torrent, then it tries to fetch torrent from BitTorrent network (timeout 3 minutes).\nA magnet-uri without tr= trackers that resolves to a private (BEP 27) torrent not stored yet is refused with 422: such a torrent only works through trackers, so upload its .torrent file or add your tracker to the magnet.",
+                "description": "Receives torrent or magnet-uri in request body.\nIf magnet-uri provided instead of torrent, then it tries to fetch torrent from BitTorrent network (timeout 3 minutes).\nA magnet-uri without tr= trackers that resolves to a private (BEP 27) torrent not stored yet is refused with 422 private_magnet: such a torrent only works through trackers, so upload its .torrent file or add your tracker to the magnet.\nA private torrent is answered with \"private\": true and without its trackers. Who calls is read from the signed X-Token header only.\nA private .torrent or magnet is stored for the caller; torrent-store's refusal is a 422 with code private_needs_account, private_unavailable, private_no_tracker or private_too_many_trackers.\nA magnet with tr= for a stored private torrent goes through when the caller has a record of it. Otherwise its trackers are checked: accepted stores it for the caller and answers \"verified\": \"accepted\"; refused is 422 private_tracker_refused with the tracker's reason; invalid is 422 private_no_tracker; an unavailable check is 503 private_verify_unavailable with Retry-After. Checks are limited per user: 429 with Retry-After.\nAn infohash or a magnet without tr= of a stored private torrent is answered as GET /resource/{resource_id}: 403 private_torrent (reason sign_in, no_record or token_in_query) or 403 private_unavailable.\nA private torrent is answered 503 when torrent-store cannot decide: with code store_outdated if it predates private records, without code if it is unavailable.",
                 "consumes": [
                     "*/*"
                 ],
@@ -81,8 +81,20 @@ const docTemplate = `{
                             "$ref": "#/definitions/services.ErrorResponse"
                         }
                     },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/services.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/services.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
                         "schema": {
                             "$ref": "#/definitions/services.ErrorResponse"
                         }
@@ -92,7 +104,7 @@ const docTemplate = `{
         },
         "/resource/{resource_id}": {
             "get": {
-                "description": "Receives resource id and returns resource.",
+                "description": "Receives resource id and returns resource.\nA private (BEP 27) torrent (\"private\": true) is answered only to a signed-in caller with a record of it; who calls is read from the signed X-Token header only.\nOtherwise 403 with code private_torrent and reason sign_in, no_record or token_in_query (a token in the token query parameter), or 403 private_unavailable.\nA private torrent is answered 503 when torrent-store cannot decide: with code store_outdated if it predates private records, without code if it is unavailable.",
                 "consumes": [
                     "*/*"
                 ],
@@ -126,6 +138,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/services.ErrorResponse"
                         }
                     },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/services.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
                         "schema": {
@@ -137,13 +155,19 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/services.ErrorResponse"
                         }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/services.ErrorResponse"
+                        }
                     }
                 }
             }
         },
         "/resource/{resource_id}.torrent": {
             "get": {
-                "description": "Receives id and returns torrent file (binary, Content-Type application/x-bittorrent) for resource.",
+                "description": "Receives id and returns torrent file (binary, Content-Type application/x-bittorrent) for resource.\nThe .torrent of a private (BEP 27) torrent is served to internal callers only: 403 with code private_torrent_file.",
                 "consumes": [
                     "*/*"
                 ],
@@ -177,6 +201,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/services.ErrorResponse"
                         }
                     },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/services.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
                         "schema": {
@@ -194,7 +224,7 @@ const docTemplate = `{
         },
         "/resource/{resource_id}/export/{content_id}": {
             "get": {
-                "description": "Provides url for exporting resource content. content_id is\neither the SHA1 of the file's path (returned by /list) or\nthe file's index in the torrent's natural file order\n(matches the fileIdx convention used by Stremio addons).",
+                "description": "Provides url for exporting resource content. content_id is\neither the SHA1 of the file's path (returned by /list) or\nthe file's index in the torrent's natural file order\n(matches the fileIdx convention used by Stremio addons).\nA private (BEP 27) torrent (\"private\": true) is answered only to a signed-in caller with a record of it; who calls is read from the signed X-Token header only.\nOtherwise 403 with code private_torrent and reason sign_in, no_record or token_in_query (a token in the token query parameter), or 403 private_unavailable.\nA private torrent is answered 503 when torrent-store cannot decide: with code store_outdated if it predates private records, without code if it is unavailable.\nThe export urls of a private torrent carry a token re-signed to the resource and the caller, valid for at most 24 hours.",
                 "consumes": [
                     "*/*"
                 ],
@@ -318,6 +348,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/services.ErrorResponse"
                         }
                     },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/services.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
                         "schema": {
@@ -329,13 +365,19 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/services.ErrorResponse"
                         }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/services.ErrorResponse"
+                        }
                     }
                 }
             }
         },
         "/resource/{resource_id}/list": {
             "get": {
-                "description": "Lists files and directories of specific resource.\nAll ids in response can be used for export.",
+                "description": "Lists files and directories of specific resource.\nAll ids in response can be used for export.\nA private (BEP 27) torrent (\"private\": true) is answered only to a signed-in caller with a record of it; who calls is read from the signed X-Token header only.\nOtherwise 403 with code private_torrent and reason sign_in, no_record or token_in_query (a token in the token query parameter), or 403 private_unavailable.\nA private torrent is answered 503 when torrent-store cannot decide: with code store_outdated if it predates private records, without code if it is unavailable.",
                 "consumes": [
                     "*/*"
                 ],
@@ -407,6 +449,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/services.ErrorResponse"
                         }
                     },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/services.ErrorResponse"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
                         "schema": {
@@ -415,6 +463,12 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/services.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
                         "schema": {
                             "$ref": "#/definitions/services.ErrorResponse"
                         }
@@ -482,7 +536,15 @@ const docTemplate = `{
         "services.ErrorResponse": {
             "type": "object",
             "properties": {
+                "code": {
+                    "description": "Code tells refusals apart (private_torrent, private_magnet, ...).",
+                    "type": "string"
+                },
                 "error": {
+                    "type": "string"
+                },
+                "reason": {
+                    "description": "Reason refines Code (for private_torrent: sign_in, no_record, token_in_query).",
                     "type": "string"
                 }
             }
@@ -756,9 +818,17 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "private": {
+                    "description": "Private is true for a BEP 27 private torrent. Always present: its\nabsence must never be read as false.",
+                    "type": "boolean"
+                },
                 "size": {
                     "description": "Size is the torrent's total size in bytes (sum of all files). Lets\nclients read the size without paginating /list — a real win on torrents\nwith tens of thousands of files.",
                     "type": "integer"
+                },
+                "verified": {
+                    "description": "Verified is \"accepted\" when a magnet's tracker accepted it and the\nrecord was created by this request; empty otherwise.",
+                    "type": "string"
                 }
             }
         },

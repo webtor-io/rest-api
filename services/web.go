@@ -106,7 +106,12 @@ func RegisterWebFlags(f []cli.Flag) []cli.Flag {
 // @Summary Stores resource
 // @Description Receives torrent or magnet-uri in request body.
 // @Description If magnet-uri provided instead of torrent, then it tries to fetch torrent from BitTorrent network (timeout 3 minutes).
-// @Description A magnet-uri without tr= trackers that resolves to a private (BEP 27) torrent not stored yet is refused with 422: such a torrent only works through trackers, so upload its .torrent file or add your tracker to the magnet.
+// @Description A magnet-uri without tr= trackers that resolves to a private (BEP 27) torrent not stored yet is refused with 422 private_magnet: such a torrent only works through trackers, so upload its .torrent file or add your tracker to the magnet.
+// @Description A private torrent is answered with "private": true and without its trackers. Who calls is read from the signed X-Token header only.
+// @Description A private .torrent or magnet is stored for the caller; torrent-store's refusal is a 422 with code private_needs_account, private_unavailable, private_no_tracker or private_too_many_trackers.
+// @Description A magnet with tr= for a stored private torrent goes through when the caller has a record of it. Otherwise its trackers are checked: accepted stores it for the caller and answers "verified": "accepted"; refused is 422 private_tracker_refused with the tracker's reason; invalid is 422 private_no_tracker; an unavailable check is 503 private_verify_unavailable with Retry-After. Checks are limited per user: 429 with Retry-After.
+// @Description An infohash or a magnet without tr= of a stored private torrent is answered as GET /resource/{resource_id}: 403 private_torrent (reason sign_in, no_record or token_in_query) or 403 private_unavailable.
+// @Description A private torrent is answered 503 when torrent-store cannot decide: with code store_outdated if it predates private records, without code if it is unavailable.
 // @Param resource body string true "resource" example("magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10&dn=Sintel&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&tr=wss%3A%2F%2Ftracker.fastcast.nz&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F")
 // @Schemes
 // @Tags   resource
@@ -118,7 +123,9 @@ func RegisterWebFlags(f []cli.Flag) []cli.Flag {
 // @Failure 404 {object} ErrorResponse
 // @Failure 408 {object} ErrorResponse
 // @Failure 422 {object} ErrorResponse
+// @Failure 429 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Router /resource/ [post]
 func (s *Web) postResource(g *gin.Context) {
 	b := g.Request.Body
@@ -179,6 +186,9 @@ func (s *Web) postResource(g *gin.Context) {
 
 // @Summary Returns resource
 // @Description Receives resource id and returns resource.
+// @Description A private (BEP 27) torrent ("private": true) is answered only to a signed-in caller with a record of it; who calls is read from the signed X-Token header only.
+// @Description Otherwise 403 with code private_torrent and reason sign_in, no_record or token_in_query (a token in the token query parameter), or 403 private_unavailable.
+// @Description A private torrent is answered 503 when torrent-store cannot decide: with code store_outdated if it predates private records, without code if it is unavailable.
 // @Schemes
 // @Param resource_id path string true "resource_id" example("08ada5a7a6183aae1e09d831df6748d566095a10")
 // @Tags  resource
@@ -186,8 +196,10 @@ func (s *Web) postResource(g *gin.Context) {
 // @Produce json
 // @Success 200 {object} ResourceResponse
 // @Failure 400 {object} ErrorResponse
+// @Failure 403 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Router /resource/{resource_id} [get]
 func (s *Web) getResource(g *gin.Context) {
 	id := g.Param("resource_id")
@@ -249,6 +261,7 @@ func magnetFromInfoHash(id, name string) string {
 
 // @Summary Returns torrent for resource
 // @Description Receives id and returns torrent file (binary, Content-Type application/x-bittorrent) for resource.
+// @Description The .torrent of a private (BEP 27) torrent is served to internal callers only: 403 with code private_torrent_file.
 // @Schemes
 // @Param resource_id path string true "resource_id" example("08ada5a7a6183aae1e09d831df6748d566095a10")
 // @Tags  resource
@@ -256,6 +269,7 @@ func magnetFromInfoHash(id, name string) string {
 // @Produce application/x-bittorrent
 // @Success 200 {file} binary "torrent file"
 // @Failure 400 {object} ErrorResponse
+// @Failure 403 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /resource/{resource_id}.torrent [get]
@@ -277,6 +291,9 @@ func (s *Web) getTorrent(g *gin.Context) {
 // @Summary Lists resource
 // @Description Lists files and directories of specific resource.
 // @Description All ids in response can be used for export.
+// @Description A private (BEP 27) torrent ("private": true) is answered only to a signed-in caller with a record of it; who calls is read from the signed X-Token header only.
+// @Description Otherwise 403 with code private_torrent and reason sign_in, no_record or token_in_query (a token in the token query parameter), or 403 private_unavailable.
+// @Description A private torrent is answered 503 when torrent-store cannot decide: with code store_outdated if it predates private records, without code if it is unavailable.
 // @Param resource_id path  string true  "resource_id" example("08ada5a7a6183aae1e09d831df6748d566095a10")
 // @Param path        query string false "path"
 // @Param limit       query int    false "limit"
@@ -289,8 +306,10 @@ func (s *Web) getTorrent(g *gin.Context) {
 // @Produce json
 // @Success 200 {object} ListResponse
 // @Failure 400 {object} ErrorResponse
+// @Failure 403 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Router /resource/{resource_id}/list [get]
 func (s *Web) getList(g *gin.Context) {
 	args, err := ListGetArgsFromParams(g)
@@ -322,6 +341,10 @@ func (s *Web) getList(g *gin.Context) {
 // @Description either the SHA1 of the file's path (returned by /list) or
 // @Description the file's index in the torrent's natural file order
 // @Description (matches the fileIdx convention used by Stremio addons).
+// @Description A private (BEP 27) torrent ("private": true) is answered only to a signed-in caller with a record of it; who calls is read from the signed X-Token header only.
+// @Description Otherwise 403 with code private_torrent and reason sign_in, no_record or token_in_query (a token in the token query parameter), or 403 private_unavailable.
+// @Description A private torrent is answered 503 when torrent-store cannot decide: with code store_outdated if it predates private records, without code if it is unavailable.
+// @Description The export urls of a private torrent carry a token re-signed to the resource and the caller, valid for at most 24 hours.
 // @Param resource_id path  string true  "resource_id" example("08ada5a7a6183aae1e09d831df6748d566095a10")
 // @Param content_id  path  string true  "content_id"  example("ca2453df3e7691c28934eebed5a253ee0aabd29f")
 // @Param types query string false "comma-separated list of export types to generate; allowed values: download, stream, torrent_client_stat, subtitles, media_probe; if omitted or empty, all types are exported; an unknown value yields 400" example("download,stream")
@@ -342,8 +365,10 @@ func (s *Web) getList(g *gin.Context) {
 // @Produce json
 // @Success 200 {object} ExportResponse
 // @Failure 400 {object} ErrorResponse
+// @Failure 403 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Router /resource/{resource_id}/export/{content_id} [get]
 func (s *Web) getExport(g *gin.Context) {
 	args, err := ExportGetArgsFromParams(g)
