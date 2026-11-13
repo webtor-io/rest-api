@@ -187,27 +187,11 @@ func (s *BaseURLBuilder) getToken() (string, error) {
 }
 
 func (s *BaseURLBuilder) getClaims() (jwt.MapClaims, error) {
-
 	tokenString, err := s.getToken()
-
 	if err != nil {
 		return nil, err
 	}
-
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, errors.Errorf("unexpected signing method=%v", token.Header["alg"])
-		}
-		return []byte(s.apiSecret), nil
-	})
-	if err != nil {
-		return nil, errors.Wrapf(err, "failed to parse token")
-	}
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok || !token.Valid {
-		return nil, errors.Wrapf(err, "failed to validate token")
-	}
-	return claims, nil
+	return parseToken(tokenString, s.apiSecret)
 }
 
 func (s *BaseURLBuilder) getRole() (string, error) {
