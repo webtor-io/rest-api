@@ -238,6 +238,7 @@ paths:
       description: |-
         Receives torrent or magnet-uri in request body.
         If magnet-uri provided instead of torrent, then it tries to fetch torrent from BitTorrent network (timeout 3 minutes).
+        A magnet-uri without tr= trackers that resolves to a private (BEP 27) torrent not stored yet is refused with 422: such a torrent only works through trackers, so upload its .torrent file or add your tracker to the magnet.
       parameters:
       - description: resource
         example: '"magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10&dn=Sintel&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&tr=wss%3A%2F%2Ftracker.fastcast.nz&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F"'
@@ -267,6 +268,10 @@ paths:
             $ref: '#/definitions/services.ErrorResponse'
         "408":
           description: Request Timeout
+          schema:
+            $ref: '#/definitions/services.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
           schema:
             $ref: '#/definitions/services.ErrorResponse'
         "500":

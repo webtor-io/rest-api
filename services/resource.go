@@ -89,6 +89,11 @@ type ResourceMap struct {
 	m2t                 Magnet2TorrentGetter
 	magnetTimeout       time.Duration
 	torrentStoreTimeout time.Duration
+	// privateRefusals holds, for 10 minutes, the infohashes whose bare magnet
+	// resolved to a private torrent and was refused with errPrivateMagnet: a
+	// retry would only resolve to the same refusal. Nothing is stored for
+	// them, so without it every retry costs a magnet2torrent resolution.
+	privateRefusals *lazymap.LazyMap[bool]
 }
 
 type TorrentStoreGetter interface {
@@ -120,6 +125,10 @@ func NewResourceMap(ts TorrentStoreGetter, m2t Magnet2TorrentGetter) *ResourceMa
 		// context, not this cap, ends the ordinary request. magnet2torrent's
 		// own cap matches (maxWait).
 		magnetTimeout: 10 * time.Minute,
+		privateRefusals: lazymap.New[bool](&lazymap.Config{
+			Expire:   10 * time.Minute,
+			Capacity: 1000,
+		}),
 	}
 }
 
@@ -282,6 +291,7 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 		if _, err := ts.Push(pushCtx, &tsp.PushRequest{Torrent: b}); err != nil {
 			return nil, forbidden(err)
 		}
+		s.privateRefusals.Drop(r.ID)
 		return r, nil
 
 	case ResourceTypeMagnet:
@@ -305,6 +315,11 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 			}
 			return s.parseTorrent(rep.GetTorrent())
 		}
+		// Checked only now that torrent-store lacks the hash, so a .torrent
+		// uploaded meanwhile, through any replica, is served instead.
+		if st, _ := s.privateRefusals.Status(r.ID); st == lazymap.Done && bareMagnet(r, b) {
+			return nil, errPrivateMagnet
+		}
 		m2t, err := s.m2t.Get()
 		if err != nil {
 			return nil, err
@@ -317,21 +332,44 @@ func (s *ResourceMap) get(ctx context.Context, r *Resource, b []byte) (*Resource
 		} else if err != nil {
 			return nil, err
 		}
-		magnetResolvedTotal.WithLabelValues(strconv.FormatBool(isPrivate(rep.GetTorrent()))).Inc()
+		private := isPrivate(rep.GetTorrent())
+		magnetResolvedTotal.WithLabelValues(strconv.FormatBool(private)).Inc()
 		// Inject the magnet's tr= trackers before pushing — m2t strips them
 		// during DHT metadata exchange, leaving the .torrent trackerless.
 		payload := rep.GetTorrent()
-		if augmented := magnetTrackerTorrent(b, payload); augmented != nil {
+		augmented := magnetTrackerTorrent(b, payload)
+		// A private torrent works only through trackers (BEP 27 rules out DHT
+		// and PEX), and the resolved result has none. A magnet carrying the
+		// user's own tr= is pushed with them, as for any torrent. A bare one
+		// would be stored trackerless and served that way to every later
+		// magnet for the hash, so nothing is pushed and the caller is told
+		// to upload the .torrent or bring a tracker.
+		//
+		// This is decided before torrent-store's stoplist and abuse gates,
+		// which only Push applies: a blocked private hash is answered 422
+		// here and 403 once its .torrent is uploaded. Accepted: nothing is
+		// stored or served either way.
+		if private && bareMagnet(r, b) {
+			_, _ = s.privateRefusals.Get(r.ID, func() (bool, error) { return true, nil })
+			return nil, errPrivateMagnet
+		}
+		if augmented != nil {
 			payload = augmented
 		}
 		_, err = ts.Push(ctx, &tsp.PushRequest{Torrent: payload})
 		if err != nil {
 			return nil, forbidden(err)
 		}
+		s.privateRefusals.Drop(r.ID)
 		return s.parseTorrent(payload)
 	}
 	return nil, nil
 }
+
+// errPrivateMagnet refuses a magnet with no tracker (bareMagnet) for a BEP 27
+// private torrent that is not stored yet. The web error handler answers it 422 by identity,
+// and web-ui keys on that status; the text is for API callers.
+var errPrivateMagnet = errors.New("private torrent: this magnet has no tracker; upload the .torrent file or use a magnet that includes your tracker")
 
 // forbidden marks a refusal from torrent-store (stoplist, abuse ban) the way
 // the Touch path does, so the web error handler answers 403 instead of 500.
@@ -368,6 +406,26 @@ func magnetTrackerTorrent(magnetURI []byte, base []byte) []byte {
 	return buf.Bytes()
 }
 
+// bareMagnet reports whether r is a magnet with no tracker in b: no tr=, or
+// only empty or blank ones ("&tr=" left unfilled), which announce nowhere.
+// It decides only the private-torrent refusal; a public magnet's tr= values
+// are pushed as they are.
+func bareMagnet(r *Resource, b []byte) bool {
+	if r.Type != ResourceTypeMagnet {
+		return false
+	}
+	ma, err := metainfo.ParseMagnetUri(string(b))
+	if err != nil {
+		return true
+	}
+	for _, t := range ma.Trackers {
+		if strings.TrimSpace(t) != "" {
+			return false
+		}
+	}
+	return true
+}
+
 // isPrivate reports whether torrent's info dict sets the BEP 27 private flag.
 func isPrivate(torrent []byte) bool {
 	mi, err := metainfo.Load(bytes.NewReader(torrent))
@@ -383,9 +441,17 @@ func (s *ResourceMap) Get(ctx context.Context, b []byte) (*Resource, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.LazyMap.Get(r.ID, func() (*Resource, error) {
+	res, err := s.LazyMap.Get(r.ID, func() (*Resource, error) {
 		return s.get(ctx, r, b)
 	})
+	// Requests for one infohash share a loader, so this one may carry the
+	// refusal of a bare magnet that started it. get refuses only bare
+	// magnets: anything else (a .torrent, a magnet with a tracker) got
+	// another request's answer and is run on its own.
+	if errors.Is(err, errPrivateMagnet) && !bareMagnet(r, b) {
+		return s.get(ctx, r, b)
+	}
+	return res, err
 }
 
 // GetManifest returns a lightweight Resource (ID + Name + Files, no piece

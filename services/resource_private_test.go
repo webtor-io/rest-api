@@ -69,7 +69,8 @@ func TestParseTorrentPublicKeepsBytes(t *testing.T) {
 // torrent-store must get the passkey-bearing bytes on every path that pushes
 // (it is the only place the seeder takes trackers from); only the answer is
 // stripped. A magnet for a stored private torrent pushes nothing: its tr= is
-// not the uploader's .torrent and could lock out the real trackers.
+// not the uploader's .torrent and could lock out the real trackers. A magnet
+// without tr= for an unstored one is refused (TestPostResourceBarePrivateMagnetRefused).
 func TestResourceMapPrivatePushesOriginal(t *testing.T) {
 	priv := privateTorrent(t)
 	id := "magnet:?xt=urn:btih:" + mustInfoHash(t, priv)
