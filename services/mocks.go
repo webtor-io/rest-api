@@ -41,19 +41,9 @@ func (s *TorrentStoreClientMock) Fingerprint(ctx context.Context, in *tsp.Finger
 	r, _ := args.Get(0).(*tsp.FingerprintReply)
 	return r, args.Error(1)
 }
-func (s *TorrentStoreClientMock) GetPrivateRecord(ctx context.Context, in *tsp.GetPrivateRecordRequest, opts ...grpc.CallOption) (*tsp.GetPrivateRecordReply, error) {
-	args := s.Called(ctx, in, opts)
-	r, _ := args.Get(0).(*tsp.GetPrivateRecordReply)
-	return r, args.Error(1)
-}
 func (s *TorrentStoreClientMock) ListPrivateRecords(ctx context.Context, in *tsp.ListPrivateRecordsRequest, opts ...grpc.CallOption) (*tsp.ListPrivateRecordsReply, error) {
 	args := s.Called(ctx, in, opts)
 	r, _ := args.Get(0).(*tsp.ListPrivateRecordsReply)
-	return r, args.Error(1)
-}
-func (s *TorrentStoreClientMock) DeletePrivateRecord(ctx context.Context, in *tsp.DeletePrivateRecordRequest, opts ...grpc.CallOption) (*tsp.DeletePrivateRecordReply, error) {
-	args := s.Called(ctx, in, opts)
-	r, _ := args.Get(0).(*tsp.DeletePrivateRecordReply)
 	return r, args.Error(1)
 }
 func (s *TorrentStoreClientMock) DeletePrivateRecordsByUser(ctx context.Context, in *tsp.DeletePrivateRecordsByUserRequest, opts ...grpc.CallOption) (*tsp.DeletePrivateRecordsReply, error) {
