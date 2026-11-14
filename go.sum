@@ -421,8 +421,8 @@ github.com/webtor-io/common-services v0.0.0-20260323152956-4a4e97f013f7 h1:Kuvd4
 github.com/webtor-io/common-services v0.0.0-20260323152956-4a4e97f013f7/go.mod h1:jSGKiO/KVhavntTXhPXzjvt3sMMbCIYaCnxMhOklvEQ=
 github.com/webtor-io/lazymap v0.0.0-20261021184726-55fd9cba3e7a h1:LmYfSO3oVs630vYUK3TurHR/an1VjPXGPuc3LJG6VoI=
 github.com/webtor-io/lazymap v0.0.0-20261021184726-55fd9cba3e7a/go.mod h1:noIeMCqd9BmJsPsyDt/fYcyvFpdQ+7LnvQKtISl7kMk=
-github.com/webtor-io/magnet2torrent v1.0.1-0.20261113103955-8de21226ede1 h1:tW22b353vBjRpvdFBLitgU0IGaASLeZUBgdeWStmIh0=
-github.com/webtor-io/magnet2torrent v1.0.1-0.20261113103955-8de21226ede1/go.mod h1:xnRWqig83wcGOgalbsFTv4v6PvqHpQYqmHig8n7osKY=
+github.com/webtor-io/magnet2torrent v1.0.1-0.20261114125219-733d1efe207c h1:keZew6ayduDuOya+3lIfFcQeozWj8m4HWkp1j3wR7Kg=
+github.com/webtor-io/magnet2torrent v1.0.1-0.20261114125219-733d1efe207c/go.mod h1:G5CTwi3kRuIH5VaAGmG/TcSR4FJdwT7SaomPVk7Ok7c=
 github.com/webtor-io/torrent-store v1.1.0 h1:4STiGsoY7Xm3MsmH9M6X121NDYnRM5NUebga6gxu4pM=
 github.com/webtor-io/torrent-store v1.1.0/go.mod h1:t2ziJm137/boTgiwJhdED+6qBOba+BmPTsB6XQ19tVA=
 github.com/willf/bitset v1.1.9/go.mod h1:RjeCKbqT1RxIR/KWY6phxZiaY1IyutSBfGjNPySAYV4=

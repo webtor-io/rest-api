@@ -17,7 +17,7 @@ require (
 	github.com/urfave/cli v1.22.17
 	github.com/webtor-io/common-services v0.0.0-20260323152956-4a4e97f013f7
 	github.com/webtor-io/lazymap v0.0.0-20261021184726-55fd9cba3e7a
-	github.com/webtor-io/magnet2torrent v1.0.1-0.20261113103955-8de21226ede1
+	github.com/webtor-io/magnet2torrent v1.0.1-0.20261114125219-733d1efe207c
 	github.com/webtor-io/torrent-store v1.1.0
 	golang.org/x/text v0.42.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800
