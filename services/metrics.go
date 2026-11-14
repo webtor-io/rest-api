@@ -69,26 +69,63 @@ var (
 	}, []string{"upstream", "method"})
 
 	// How many magnet resolutions turn out to be BEP 27 private torrents. Such
-	// a torrent only works with the uploader's .torrent (the passkey is in its
-	// trackers, never in the info dict), so this sizes the magnet users that
-	// path concerns. It counts magnet2torrent calls that returned an info
-	// dict, not requests and not distinct torrents: lazymap shares one loader
+	// a torrent only works through its own trackers (the passkey is in them,
+	// never in the info dict), so this sizes the magnet users that path
+	// concerns. It counts magnet2torrent calls that returned an info dict,
+	// not requests and not distinct torrents: lazymap shares one loader
 	// between concurrent requests for a hash and keeps a success for 10
 	// minutes, by which time torrent-store has the hash; a result that was
 	// not stored (the push failed) is resolved, and counted, again by the
-	// next request for it. That includes every bare private magnet, which is
-	// refused and never stored, so private="true" counts attempts, not
-	// torrents: retries within 10 minutes of a refusal are answered from
-	// ResourceMap.privateRefusals without a resolution and are not counted,
-	// later ones are. A .torrent or a magnet with a tracker that shared a
-	// refused magnet's loader is run again on its own, and a magnet among
-	// them resolves, and counts, a second time.
+	// next request for it. A bare private magnet is not counted: magnet2torrent
+	// refuses it without returning the info dict. One that predates that
+	// returns it, and then every bare attempt resolves and counts, except
+	// retries within 10 minutes of a refusal, which are answered from
+	// ResourceMap.privateRefusals without a resolution.
 	magnetResolvedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: metricsNamespace,
 		Subsystem: "magnet",
 		Name:      "resolved_total",
 		Help:      "Magnets resolved by magnet2torrent for an infohash torrent-store did not have, by the info dict's BEP 27 private flag.",
 	}, []string{"private"})
+
+	// Pushes of BEP 27 private torrents with the caller's uid (pushPrivate):
+	// an uploaded .torrent, or a magnet with tr= of an unknown hash. outcome
+	// is the store's record outcome (another non-empty one is unchanged),
+	// refused (ErrorInfo, PermissionDenied, or InvalidArgument without
+	// ErrorInfo: a malformed torrent), failed (any other error) or
+	// outdated (no outcome: a store that predates private records).
+	privateUploadsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: metricsNamespace,
+		Subsystem: "private",
+		Name:      "uploads_total",
+		Help:      "Private torrent pushes to torrent-store with the caller's uid, by upload source and outcome.",
+	}, []string{"source", "outcome"})
+
+	// Refusals of the private access rule (and, from the known-magnet path,
+	// of tracker checks), counted in both modes: in observe the request goes
+	// on, so this is what enforce would have refused. No mode label:
+	// restapi_private_enforce says which mode a time window ran in.
+	privateRefusedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: metricsNamespace,
+		Subsystem: "private",
+		Name:      "refused_total",
+		Help:      "Private torrent requests refused, by route and reason; counted in observe mode too.",
+	}, []string{"route", "reason"})
+
+	// torrent-store's answer to the per-request access check of a private hash.
+	privateLookupsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: metricsNamespace,
+		Subsystem: "private",
+		Name:      "record_lookups_total",
+		Help:      "Access checks (Touch with the caller) of private torrents in torrent-store, by outcome.",
+	}, []string{"outcome"})
+
+	privateEnforce = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: metricsNamespace,
+		Subsystem: "private",
+		Name:      "enforce",
+		Help:      "1 when private torrent access refusals are enforced, 0 when they are only counted.",
+	})
 )
 
 func init() {
@@ -97,6 +134,21 @@ func init() {
 	// resolution, and private="true" is rare enough for that to matter.
 	for _, private := range []string{"true", "false"} {
 		magnetResolvedTotal.WithLabelValues(private)
+	}
+	for _, source := range []string{sourceSite, sourceRapidAPI, sourceMagnet} {
+		for _, outcome := range []string{"inserted", "updated", "unchanged", "refused", "failed", "outdated"} {
+			privateUploadsTotal.WithLabelValues(source, outcome)
+		}
+	}
+	for _, route := range []string{routeResource, routeList, routeExport, routeTorrent, routePost} {
+		for _, reason := range []string{reasonSignIn, reasonNoRecord, reasonTokenInQuery, codePrivateUnavailable,
+			codePrivateTorrentFile, codePrivateNeedsAccount, codePrivateNoTracker, codePrivateTooManyTrackers,
+			codePrivateTrackerRefused, codePrivateVerifyUnavailable, reasonRateLimited, reasonNoToken} {
+			privateRefusedTotal.WithLabelValues(route, reason)
+		}
+	}
+	for _, outcome := range []string{"allowed", "refused", "unavailable", "disabled", "outdated"} {
+		privateLookupsTotal.WithLabelValues(outcome)
 	}
 }
 
@@ -115,6 +167,9 @@ const (
 	outcomeTimeout   = "timeout"
 	outcomeCanceled  = "canceled"
 	outcomeError     = "error"
+	// A status with ErrorInfo from torrent-store or magnet2torrent: a refusal
+	// by rule (sign_in, private_magnet, ...), not a failure of the upstream.
+	outcomeRefused = "refused"
 )
 
 // routeLabel is the matched route template, so /resource/<hash>/list from a
@@ -196,6 +251,9 @@ func grpcOutcome(err error) string {
 	}
 	if errors.Is(err, context.Canceled) {
 		return outcomeCanceled
+	}
+	if _, ok := errorInfoReason(err); ok {
+		return outcomeRefused
 	}
 	switch status.Code(err) {
 	case codes.NotFound:

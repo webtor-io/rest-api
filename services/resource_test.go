@@ -16,7 +16,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	m2tp "github.com/webtor-io/magnet2torrent/magnet2torrent"
+	m2tp "github.com/webtor-io/magnet2torrent/proto"
 	tsp "github.com/webtor-io/torrent-store/proto"
 )
 

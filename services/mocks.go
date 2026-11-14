@@ -7,7 +7,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/stretchr/testify/mock"
-	m2tp "github.com/webtor-io/magnet2torrent/magnet2torrent"
+	m2tp "github.com/webtor-io/magnet2torrent/proto"
 	tsp "github.com/webtor-io/torrent-store/proto"
 	"google.golang.org/grpc"
 )
@@ -34,6 +34,21 @@ func (s *TorrentStoreClientMock) Touch(ctx context.Context, in *tsp.TouchRequest
 func (s *TorrentStoreClientMock) Files(ctx context.Context, in *tsp.FilesRequest, opts ...grpc.CallOption) (*tsp.FilesReply, error) {
 	args := s.Called(ctx, in, opts)
 	r, _ := args.Get(0).(*tsp.FilesReply)
+	return r, args.Error(1)
+}
+func (s *TorrentStoreClientMock) Fingerprint(ctx context.Context, in *tsp.FingerprintRequest, opts ...grpc.CallOption) (*tsp.FingerprintReply, error) {
+	args := s.Called(ctx, in, opts)
+	r, _ := args.Get(0).(*tsp.FingerprintReply)
+	return r, args.Error(1)
+}
+func (s *TorrentStoreClientMock) ListPrivateRecords(ctx context.Context, in *tsp.ListPrivateRecordsRequest, opts ...grpc.CallOption) (*tsp.ListPrivateRecordsReply, error) {
+	args := s.Called(ctx, in, opts)
+	r, _ := args.Get(0).(*tsp.ListPrivateRecordsReply)
+	return r, args.Error(1)
+}
+func (s *TorrentStoreClientMock) DeletePrivateRecordsByUser(ctx context.Context, in *tsp.DeletePrivateRecordsByUserRequest, opts ...grpc.CallOption) (*tsp.DeletePrivateRecordsReply, error) {
+	args := s.Called(ctx, in, opts)
+	r, _ := args.Get(0).(*tsp.DeletePrivateRecordsReply)
 	return r, args.Error(1)
 }
 
@@ -66,6 +81,11 @@ func (s *Magnet2TorrentClientMock) Magnet2Torrent(ctx context.Context, in *m2tp.
 		}
 
 	}
+	return r, args.Error(1)
+}
+func (s *Magnet2TorrentClientMock) Verify(ctx context.Context, in *m2tp.VerifyRequest, opts ...grpc.CallOption) (*m2tp.VerifyReply, error) {
+	args := s.Called(ctx, in, opts)
+	r, _ := args.Get(0).(*m2tp.VerifyReply)
 	return r, args.Error(1)
 }
 

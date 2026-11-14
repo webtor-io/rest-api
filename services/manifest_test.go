@@ -20,8 +20,10 @@ func TestGetManifest(t *testing.T) {
 	rm := NewTestResourceMap()
 	tsclm, _ := rm.ts.Get()
 	tsclmm := tsclm.(*TorrentStoreClientMock)
+	public := false
 	tsclmm.On("Files", mock.Anything, mock.Anything, mock.Anything).Return(&tsp.FilesReply{
-		Name: "Sintel",
+		Name:    "Sintel",
+		Private: &public,
 		Files: []*tsp.FileInfo{
 			{Path: []string{"Sintel", "Sintel.de.srt"}, Length: 1652},
 			{Path: []string{"Sintel", "Sintel.mp4"}, Length: 129241752},

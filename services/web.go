@@ -41,8 +41,9 @@ import (
 // @description Optional API key passed as a query parameter. Same semantics as X-Api-Key header (query value takes precedence).
 
 const (
-	webHostFlag = "host"
-	webPortFlag = "port"
+	webHostFlag              = "host"
+	webPortFlag              = "port"
+	privateAccessEnforceFlag = "private-access-enforce"
 )
 
 type Web struct {
@@ -53,17 +54,31 @@ type Web struct {
 	c    *List
 	e    *Export
 	st   *SpeedTest
+	// secret verifies X-Token (EXPORT_API_SECRET): who calls is read from it.
+	secret string
+	// enforce: a refusal of the private access rule is answered; otherwise
+	// it is only counted and the request goes on (PRIVATE_ACCESS_ENFORCE).
+	enforce bool
+	// vl caps the tracker checks (Verify) of a known private magnet per uid.
+	vl *verifyLimiter
 }
 
 func NewWeb(c *cli.Context, rm *ResourceMap, co *List, ex *Export, st *SpeedTest) *Web {
-	return &Web{
-		host: c.String(webHostFlag),
-		port: c.Int(webPortFlag),
-		rm:   rm,
-		c:    co,
-		e:    ex,
-		st:   st,
+	w := &Web{
+		host:    c.String(webHostFlag),
+		port:    c.Int(webPortFlag),
+		rm:      rm,
+		c:       co,
+		e:       ex,
+		st:      st,
+		secret:  c.String(exportApiSecretFlag),
+		enforce: c.Bool(privateAccessEnforceFlag),
+		vl:      newVerifyLimiter(),
 	}
+	if w.enforce { // the gauge starts at 0
+		privateEnforce.Set(1)
+	}
+	return w
 }
 
 func RegisterWebFlags(f []cli.Flag) []cli.Flag {
@@ -80,13 +95,23 @@ func RegisterWebFlags(f []cli.Flag) []cli.Flag {
 			Value:  8080,
 			EnvVar: "WEB_PORT",
 		},
+		cli.BoolFlag{
+			Name:   privateAccessEnforceFlag,
+			Usage:  "answer refusals of the private torrent access rule; without it they are only counted",
+			EnvVar: "PRIVATE_ACCESS_ENFORCE",
+		},
 	)
 }
 
 // @Summary Stores resource
 // @Description Receives torrent or magnet-uri in request body.
 // @Description If magnet-uri provided instead of torrent, then it tries to fetch torrent from BitTorrent network (timeout 3 minutes).
-// @Description A magnet-uri without tr= trackers that resolves to a private (BEP 27) torrent not stored yet is refused with 422: such a torrent only works through trackers, so upload its .torrent file or add your tracker to the magnet.
+// @Description A magnet-uri without tr= trackers that resolves to a private (BEP 27) torrent not stored yet is refused with 422 private_magnet: such a torrent only works through trackers, so upload its .torrent file or add your tracker to the magnet.
+// @Description A private torrent is answered with "private": true and without its trackers. Who calls is read from the signed X-Token header only.
+// @Description A private .torrent or magnet is stored for the caller; torrent-store's refusal is a 422 with code private_needs_account, private_unavailable, private_no_tracker or private_too_many_trackers.
+// @Description A magnet with tr= for a stored private torrent goes through when the caller has a record of it. Otherwise its trackers are checked: accepted stores it for the caller and answers "verified": "accepted"; refused is 422 private_tracker_refused with the tracker's reason; invalid is 422 private_no_tracker; an unavailable check is 503 private_verify_unavailable with Retry-After. Checks are limited per user: 429 with Retry-After.
+// @Description An infohash or a magnet without tr= of a stored private torrent is answered as GET /resource/{resource_id}: 403 private_torrent (reason sign_in, no_record or token_in_query) or 403 private_unavailable.
+// @Description A private torrent is answered 503 when torrent-store cannot decide: with code store_outdated if it predates private records, without code if it is unavailable.
 // @Param resource body string true "resource" example("magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10&dn=Sintel&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&tr=wss%3A%2F%2Ftracker.fastcast.nz&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F")
 // @Schemes
 // @Tags   resource
@@ -98,7 +123,9 @@ func RegisterWebFlags(f []cli.Flag) []cli.Flag {
 // @Failure 404 {object} ErrorResponse
 // @Failure 408 {object} ErrorResponse
 // @Failure 422 {object} ErrorResponse
+// @Failure 429 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Router /resource/ [post]
 func (s *Web) postResource(g *gin.Context) {
 	b := g.Request.Body
@@ -108,22 +135,60 @@ func (s *Web) postResource(g *gin.Context) {
 		g.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
-	r, err := s.rm.Get(g.Request.Context(), bb)
+	ctx := g.Request.Context()
+	cl := readClaims(g, s.secret)
+	u := cl.uploader()
+	r, err := s.rm.parse(bb)
 	if err != nil {
 		g.Error(err)
 		return
 	}
-	rr := &ResourceResponse{
-		ID:        r.ID,
-		Name:      r.Name,
-		MagnetURI: r.MagnetURI,
+	res, resolved := r, false
+	if r.Type == ResourceTypeTorrent && r.Private {
+		// Pushed here, with this caller, on every upload: the record is
+		// theirs, and the resource cache is shared between callers. The
+		// answer is the parsed torrent, stripped of its trackers.
+		if _, err := s.rm.pushPrivate(ctx, bb, u); err != nil {
+			g.Error(err)
+			return
+		}
+	} else if res, resolved, err = s.rm.GetAs(ctx, bb, u); err != nil {
+		g.Error(err)
+		return
 	}
-	s.fillResourceStructure(rr, r)
+	// A private torrent this request pushed, as a .torrent or a magnet it
+	// resolved, was pushed for this caller. Any other is read from a stored
+	// upload and is answered only after a decision: a magnet with tr= is
+	// checked as a known private magnet, an infohash or a bare magnet goes
+	// by the access rule.
+	verified := ""
+	if !resolved && res.Private && r.Type != ResourceTypeTorrent {
+		if r.Type == ResourceTypeMagnet && !bareMagnet(r, bb) {
+			verified, err = s.knownPrivateMagnet(g, res, bb, cl)
+		} else {
+			_, err = s.privateAllowed(g, res, routePost)
+		}
+		if err != nil {
+			g.Error(err)
+			return
+		}
+	}
+	rr := &ResourceResponse{
+		ID:        res.ID,
+		Name:      res.Name,
+		MagnetURI: res.MagnetURI,
+		Private:   res.Private,
+		Verified:  verified,
+	}
+	s.fillResourceStructure(rr, res)
 	g.PureJSON(http.StatusOK, rr)
 }
 
 // @Summary Returns resource
 // @Description Receives resource id and returns resource.
+// @Description A private (BEP 27) torrent ("private": true) is answered only to a signed-in caller with a record of it; who calls is read from the signed X-Token header only.
+// @Description Otherwise 403 with code private_torrent and reason sign_in, no_record or token_in_query (a token in the token query parameter), or 403 private_unavailable.
+// @Description A private torrent is answered 503 when torrent-store cannot decide: with code store_outdated if it predates private records, without code if it is unavailable.
 // @Schemes
 // @Param resource_id path string true "resource_id" example("08ada5a7a6183aae1e09d831df6748d566095a10")
 // @Tags  resource
@@ -131,8 +196,10 @@ func (s *Web) postResource(g *gin.Context) {
 // @Produce json
 // @Success 200 {object} ResourceResponse
 // @Failure 400 {object} ErrorResponse
+// @Failure 403 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Router /resource/{resource_id} [get]
 func (s *Web) getResource(g *gin.Context) {
 	id := g.Param("resource_id")
@@ -149,10 +216,15 @@ func (s *Web) getResource(g *gin.Context) {
 		g.Error(err)
 		return
 	}
+	if _, err := s.privateAllowed(g, r, routeResource); err != nil {
+		g.Error(err)
+		return
+	}
 	rr := &ResourceResponse{
 		ID:        r.ID,
 		Name:      r.Name,
 		MagnetURI: magnetFromInfoHash(r.ID, r.Name),
+		Private:   r.Private,
 	}
 	s.fillResourceStructure(rr, r)
 	g.PureJSON(http.StatusOK, rr)
@@ -189,6 +261,7 @@ func magnetFromInfoHash(id, name string) string {
 
 // @Summary Returns torrent for resource
 // @Description Receives id and returns torrent file (binary, Content-Type application/x-bittorrent) for resource.
+// @Description The .torrent of a private (BEP 27) torrent is served to internal callers only: 403 with code private_torrent_file.
 // @Schemes
 // @Param resource_id path string true "resource_id" example("08ada5a7a6183aae1e09d831df6748d566095a10")
 // @Tags  resource
@@ -196,6 +269,7 @@ func magnetFromInfoHash(id, name string) string {
 // @Produce application/x-bittorrent
 // @Success 200 {file} binary "torrent file"
 // @Failure 400 {object} ErrorResponse
+// @Failure 403 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /resource/{resource_id}.torrent [get]
@@ -207,12 +281,19 @@ func (s *Web) getTorrent(g *gin.Context) {
 		g.Error(err)
 		return
 	}
+	if _, err := s.privateAllowed(g, r, routeTorrent); err != nil {
+		g.Error(err)
+		return
+	}
 	g.Data(http.StatusOK, "application/x-bittorrent", r.Torrent)
 }
 
 // @Summary Lists resource
 // @Description Lists files and directories of specific resource.
 // @Description All ids in response can be used for export.
+// @Description A private (BEP 27) torrent ("private": true) is answered only to a signed-in caller with a record of it; who calls is read from the signed X-Token header only.
+// @Description Otherwise 403 with code private_torrent and reason sign_in, no_record or token_in_query (a token in the token query parameter), or 403 private_unavailable.
+// @Description A private torrent is answered 503 when torrent-store cannot decide: with code store_outdated if it predates private records, without code if it is unavailable.
 // @Param resource_id path  string true  "resource_id" example("08ada5a7a6183aae1e09d831df6748d566095a10")
 // @Param path        query string false "path"
 // @Param limit       query int    false "limit"
@@ -225,8 +306,10 @@ func (s *Web) getTorrent(g *gin.Context) {
 // @Produce json
 // @Success 200 {object} ListResponse
 // @Failure 400 {object} ErrorResponse
+// @Failure 403 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Router /resource/{resource_id}/list [get]
 func (s *Web) getList(g *gin.Context) {
 	args, err := ListGetArgsFromParams(g)
@@ -237,6 +320,10 @@ func (s *Web) getList(g *gin.Context) {
 	id := strings.ToLower(g.Param("resource_id"))
 	r, err := s.rm.GetManifest(g.Request.Context(), id)
 	if err != nil {
+		g.Error(err)
+		return
+	}
+	if _, err := s.privateAllowed(g, r, routeList); err != nil {
 		g.Error(err)
 		return
 	}
@@ -254,6 +341,10 @@ func (s *Web) getList(g *gin.Context) {
 // @Description either the SHA1 of the file's path (returned by /list) or
 // @Description the file's index in the torrent's natural file order
 // @Description (matches the fileIdx convention used by Stremio addons).
+// @Description A private (BEP 27) torrent ("private": true) is answered only to a signed-in caller with a record of it; who calls is read from the signed X-Token header only.
+// @Description Otherwise 403 with code private_torrent and reason sign_in, no_record or token_in_query (a token in the token query parameter), or 403 private_unavailable.
+// @Description A private torrent is answered 503 when torrent-store cannot decide: with code store_outdated if it predates private records, without code if it is unavailable.
+// @Description The export urls of a private torrent carry a token re-signed to the resource and the caller, valid for at most 24 hours.
 // @Param resource_id path  string true  "resource_id" example("08ada5a7a6183aae1e09d831df6748d566095a10")
 // @Param content_id  path  string true  "content_id"  example("ca2453df3e7691c28934eebed5a253ee0aabd29f")
 // @Param types query string false "comma-separated list of export types to generate; allowed values: download, stream, torrent_client_stat, subtitles, media_probe; if omitted or empty, all types are exported; an unknown value yields 400" example("download,stream")
@@ -274,8 +365,10 @@ func (s *Web) getList(g *gin.Context) {
 // @Produce json
 // @Success 200 {object} ExportResponse
 // @Failure 400 {object} ErrorResponse
+// @Failure 403 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
+// @Failure 503 {object} ErrorResponse
 // @Router /resource/{resource_id}/export/{content_id} [get]
 func (s *Web) getExport(g *gin.Context) {
 	args, err := ExportGetArgsFromParams(g)
@@ -289,6 +382,11 @@ func (s *Web) getExport(g *gin.Context) {
 	// parsed the whole .torrent — 21 MB for a 184k-file dump, over the 10 s
 	// store timeout, which is where the 504s on export came from.
 	r, err := s.rm.GetManifest(g.Request.Context(), resourceID)
+	if err != nil {
+		g.Error(err)
+		return
+	}
+	pg, err := s.privateAllowed(g, r, routeExport)
 	if err != nil {
 		g.Error(err)
 		return
@@ -318,7 +416,7 @@ func (s *Web) getExport(g *gin.Context) {
 		g.Error(errors.Errorf("content with id %v not found", contentID))
 		return
 	}
-	res, err := s.e.Get(r, item, args, g)
+	res, err := s.e.Get(r, item, args, pg)
 	if err != nil {
 		g.Error(err)
 		return
@@ -351,12 +449,19 @@ func logPanic(c *gin.Context, value any, stack []byte) {
 	panicsTotal.WithLabelValues(routeLabel(c)).Inc()
 }
 
+// skipAccessLog keeps /internal/ requests out of the access log: their path
+// carries a uid. They are still counted by route in httpMetrics, and their
+// errors are logged.
+func skipAccessLog(c *gin.Context) bool {
+	return strings.HasPrefix(c.Request.URL.Path, "/internal/")
+}
+
 // newRouter is the middleware stack without routes, shared with tests so the
 // ordering they exercise is the one production runs: metrics wrap recovery
 // (see httpMetrics for why), the error handler sits inside both.
 func newRouter() *gin.Engine {
 	r := gin.New()
-	r.Use(gin.Logger(), httpMetrics(), gin.CustomRecovery(recoverToLog))
+	r.Use(gin.LoggerWithConfig(gin.LoggerConfig{Skip: skipAccessLog}), httpMetrics(), gin.CustomRecovery(recoverToLog))
 	r.UseRawPath = true
 	return r
 }
@@ -376,12 +481,20 @@ func (s *Web) errorHandler(c *gin.Context) {
 		c.PureJSON(http.StatusInternalServerError, &ErrorResponse{Error: http.StatusText(http.StatusInternalServerError)})
 		return
 	}
-	if errors.Is(err.Err, errPrivateMagnet) {
-		// By identity and ahead of the keyword match below, which a wrapping
-		// message could steer: web-ui tells this case apart by the status.
-		// Warn, not error: the client sent a magnet that cannot work.
-		log.Warn(err)
-		c.PureJSON(http.StatusUnprocessableEntity, &ErrorResponse{Error: errPrivateMagnet.Error()})
+	var ae *apiError
+	if errors.As(err.Err, &ae) {
+		// By type and ahead of the keyword match below, which a wrapping
+		// message could steer: clients tell these cases apart by status and
+		// code. Below 500 the client sent something that cannot work: warn.
+		if ae.RetryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(ae.RetryAfter))
+		}
+		if ae.Status < http.StatusInternalServerError {
+			log.Warn(err)
+		} else {
+			log.Error(err)
+		}
+		c.PureJSON(ae.Status, &ErrorResponse{Error: ae.Msg, Code: ae.Code, Reason: ae.Reason})
 		return
 	}
 	log.Error(err)
@@ -414,6 +527,16 @@ func (s *Web) Serve() error {
 	}
 	r := newRouter()
 	r.Use(s.errorHandler)
+	s.routes(r)
+
+	docs.SwaggerInfo.BasePath = "/"
+	log.Infof("serving Web at %v", addr)
+	return http.Serve(s.ln, r)
+}
+
+// routes registers every route Serve serves; tests run them behind the same
+// middleware.
+func (s *Web) routes(r *gin.Engine) {
 	rg := r.Group("/resource")
 	{
 		rg.POST("/", s.postResource)
@@ -421,14 +544,15 @@ func (s *Web) Serve() error {
 		rg.GET("/:resource_id/list", s.getList)
 		rg.GET("/:resource_id/export/:content_id", s.getExport)
 	}
+	ig := r.Group("/internal/private-trackers")
+	{
+		ig.GET("/:uid", s.listPrivateTrackers)
+		ig.DELETE("/:uid", s.deletePrivateTrackers)
+	}
 	if s.st != nil {
 		r.GET("/speedtest", s.getSpeedtest)
 	}
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-
-	docs.SwaggerInfo.BasePath = "/"
-	log.Infof("serving Web at %v", addr)
-	return http.Serve(s.ln, r)
 }
 
 // @Summary Returns speed test urls
