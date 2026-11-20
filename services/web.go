@@ -225,6 +225,7 @@ func (s *Web) getResource(g *gin.Context) {
 		Name:      r.Name,
 		MagnetURI: magnetFromInfoHash(r.ID, r.Name),
 		Private:   r.Private,
+		Reserved:  r.Reserved,
 	}
 	s.fillResourceStructure(rr, r)
 	g.PureJSON(http.StatusOK, rr)
