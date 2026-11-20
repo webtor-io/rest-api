@@ -92,7 +92,7 @@ func serve(c *cli.Context) error {
 	defer m2t.Close()
 
 	// Setting ResourceMap
-	rm := s.NewResourceMap(ts, m2t)
+	rm := s.NewResourceMap(ts, m2t, s.NewUploadManifest(c, httpCl))
 
 	// Setting List
 	li := s.NewList()

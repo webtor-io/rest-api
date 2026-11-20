@@ -38,6 +38,7 @@ const (
 	reasonTokenInQuery = "token_in_query"
 
 	textPrivateTorrent = "private torrent: only a signed-in user who added it with their own tracker can play it"
+	textPrivateUpload  = "private upload: only the signed-in user who uploaded it can open it"
 )
 
 // errorInfoReason returns the Reason of the first errdetails.ErrorInfo in a gRPC status (any Domain).
