@@ -136,8 +136,17 @@ func (s *UploadManifest) Manifest(ctx context.Context, id string) (*Resource, er
 	r := &Resource{ID: id, Name: m.Name, Type: ResourceTypeSha1, Private: uploads.Owned(id), UIDs: m.UIDs, Reserved: m.Reserved}
 	var sum int64
 	for _, f := range m.Files {
+		p := dropEmptyComponents(strings.Split(f.Path, "/"))
+		// The seeder lists files by walking a directory, so every one has a
+		// path; a file without one ("", missing, only slashes) means some
+		// other answer, and would be a nameless row in the listing.
+		if len(p) == 0 {
+			outcome = outcomeError
+			log.WithField("upload", id).Warn("upload manifest failed: a file without a path")
+			return nil, errUploadManifestUnavailable
+		}
 		// No Pad: an upload has no padding files.
-		r.Files = append(r.Files, &File{Path: dropEmptyComponents(strings.Split(f.Path, "/")), Size: f.Size})
+		r.Files = append(r.Files, &File{Path: p, Size: f.Size})
 		sum += f.Size
 	}
 	if r.Reserved == nil { // a list from Vault: what is stored is what it holds

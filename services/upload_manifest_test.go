@@ -176,6 +176,10 @@ func TestUploadManifestFailClosed(t *testing.T) {
 		{"no files", thpAnswer(200, `{"name":"N","uids":["`+uidA+`"],"reserved":0}`), nil, 503, outcomeError},
 		{"null files", thpAnswer(200, `{"name":"N","uids":["`+uidA+`"],"files":null}`), nil, 503, outcomeError},
 		{"no uids", thpAnswer(200, `{"name":"N","reserved":0,"files":[]}`), nil, 503, outcomeError},
+		// A file with no path would be a nameless row in the listing.
+		{"empty path", thpAnswer(200, `{"name":"N","uids":["`+uidA+`"],"reserved":0,"files":[{"path":"N/a","size":1},{"path":"","size":1}]}`), nil, 503, outcomeError},
+		{"no path", thpAnswer(200, `{"name":"N","uids":["`+uidA+`"],"reserved":0,"files":[{"size":1}]}`), nil, 503, outcomeError},
+		{"slashes only path", thpAnswer(200, `{"name":"N","uids":["`+uidA+`"],"reserved":0,"files":[{"path":"//","size":1}]}`), nil, 503, outcomeError},
 		{"slow", slow, func(_ *testing.T, _ *fakeTHP, m *UploadManifest) { m.timeout = 50 * time.Millisecond }, 503, outcomeTimeout},
 		{"closed", thpAnswer(200, uploadManifestJSON), func(_ *testing.T, f *fakeTHP, _ *UploadManifest) { f.Close() }, 503, outcomeError},
 		{"body over the limit", thpAnswer(200, uploadManifestJSON), func(t *testing.T, _ *fakeTHP, _ *UploadManifest) {
