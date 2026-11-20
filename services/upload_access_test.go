@@ -79,12 +79,15 @@ func TestUploadAccessMatrix(t *testing.T) {
 		}
 		t.Run(mode.name+"/no uids", func(t *testing.T) {
 			h, _, ts, _ := uploadWeb(t, mode.enforce, 200, uploadNoUIDsJSON)
+			refused := counter(t, privateRefusedTotal.WithLabelValues(routeResource, reasonNoRecord))
 
 			rec := send(t, h, "GET", "/resource/"+uploadKind0, signed(t, jwt.MapClaims{"uid": uidA}), nil)
 
 			require.Equal(t, 403, rec.Code, rec.Body.String())
 			assert.Equal(t, ErrorResponse{Error: textPrivateUpload, Code: codePrivateTorrent, Reason: reasonNoRecord}, errorBody(t, rec))
+			assert.Equal(t, 1.0, counter(t, privateRefusedTotal.WithLabelValues(routeResource, reasonNoRecord))-refused)
 			ts.AssertNumberOfCalls(t, "Touch", 0)
+			ts.AssertNumberOfCalls(t, "Files", 0)
 		})
 	}
 
