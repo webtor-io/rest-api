@@ -258,7 +258,7 @@ func TestUploadResourceReserved(t *testing.T) {
 	assert.NotContains(t, jsonOf(t, rec), "reserved")
 }
 
-// Review Focus 2: an upload with no file done yet and no part.
+// An upload with no file done yet and no part.
 func TestUploadEmptyResource(t *testing.T) {
 	h, _, _, _ := uploadWeb(t, false, 200, `{"kind":"upload","name":"","uids":["`+uidA+`"],"reserved":0,"files":[]}`)
 	rec := send(t, h, "GET", "/resource/"+uploadKind1, "", nil)
@@ -276,7 +276,7 @@ func TestUploadEmptyResource(t *testing.T) {
 	assert.Equal(t, 0.0, jsonOf(t, rec)["items_count"])
 }
 
-// Review Focus 3: the request URL carries the token and the API key; neither
+// The request URL carries the token and the API key; neither
 // reaches the response or the log.
 func TestUploadManifestErrorsHideToken(t *testing.T) {
 	for _, c := range []struct {
@@ -389,7 +389,7 @@ func TestUploadResourceNoMagnet(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), `"magnet_uri":"magnet:?xt=urn:btih:`+tokenTestHash)
 }
 
-// Review Focus 4: the store path, untouched, answers an upload ID 404 and
+// The store path, untouched, answers an upload ID 404 and
 // never reaches the seeder.
 func TestUploadNoTorrentFile(t *testing.T) {
 	h, _, ts, f := uploadWeb(t, true, 200, uploadManifestJSON)
