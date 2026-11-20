@@ -16,11 +16,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v4"
 	log "github.com/sirupsen/logrus"
 	"github.com/sirupsen/logrus/hooks/test"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -354,4 +358,34 @@ func TestNewUploadManifestFromFlags(t *testing.T) {
 			assert.Equal(t, uploadManifestTimeout, m.timeout)
 		})
 	}
+}
+
+// An upload has no swarm, so it has no magnet; a torrent keeps the one
+// synthesized from its infohash.
+func TestUploadResourceNoMagnet(t *testing.T) {
+	h, w, _, _ := uploadWeb(t, true, 200, uploadManifestJSON)
+	rec := send(t, h, "GET", "/resource/"+uploadKind1, "", nil)
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	assert.NotContains(t, rec.Body.String(), "magnet_uri")
+
+	cachePrivate(t, w, tokenTestHash, false)
+	rec = send(t, h, "GET", "/resource/"+tokenTestHash, "", nil)
+	require.Equal(t, 200, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `"magnet_uri":"magnet:?xt=urn:btih:`+tokenTestHash)
+}
+
+// Review Focus 4: the store path, untouched, answers an upload ID 404 and
+// never reaches the seeder.
+func TestUploadNoTorrentFile(t *testing.T) {
+	h, _, ts, f := uploadWeb(t, true, 200, uploadManifestJSON)
+	ts.On("Touch", mock.Anything, touchOf(uploadKind0, callerIs("", true)), mock.Anything).
+		Return(nil, status.Error(codes.NotFound, "not found"))
+
+	rec := send(t, h, "GET", "/resource/"+uploadKind0+".torrent", signed(t, jwt.MapClaims{"uid": uidA}), nil)
+	assert.Equal(t, 404, rec.Code, rec.Body.String())
+	rec = send(t, h, "POST", "/resource/", "", []byte(uploadKind0))
+	assert.Equal(t, 404, rec.Code, rec.Body.String())
+
+	assert.Equal(t, int32(0), f.hits.Load())
+	ts.AssertExpectations(t)
 }
