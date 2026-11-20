@@ -31,6 +31,9 @@ const (
 // lower it.
 var uploadManifestMaxBody int64 = 32 << 20
 
+// uploadManifestMethod names the index request in the upstream metrics.
+const uploadManifestMethod = "UploadManifest"
+
 var errUploadManifestUnavailable = &apiError{Status: http.StatusServiceUnavailable, Msg: "upload manifest unavailable"}
 
 // UploadManifest reads an upload's manifest from its seeder through THP:
@@ -77,7 +80,8 @@ func (s *UploadManifest) Manifest(ctx context.Context, id string) (*Resource, er
 		"exp":      time.Now().Add(uploadManifestTokenTTL).Unix(),
 	}).SignedString([]byte(s.secret))
 	if err != nil {
-		return nil, err
+		log.WithError(err).WithField("upload", id).Warn("upload manifest failed")
+		return nil, errUploadManifestUnavailable
 	}
 	q := url.Values{"token": {tok}}
 	if s.apiKey != "" {
@@ -85,10 +89,14 @@ func (s *UploadManifest) Manifest(ctx context.Context, id string) (*Resource, er
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
+	// Observed on return: a 200 whose body cannot be used is a failed call too.
+	start, outcome := time.Now(), outcomeError
+	defer func() { observeUpstream(upstreamTorrentHTTPProxy, uploadManifestMethod, outcome, start) }()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.target+id+"/?"+q.Encode(), nil)
 	var res *http.Response
 	if err == nil {
 		res, err = s.cl.Do(req)
+		outcome = httpOutcome(res, err)
 	}
 	if err != nil {
 		log.WithError(withoutURL(err)).WithField("upload", id).Warn("upload manifest failed")
@@ -113,7 +121,16 @@ func (s *UploadManifest) Manifest(ctx context.Context, id string) (*Resource, er
 		}
 	}
 	if err := json.NewDecoder(io.LimitReader(res.Body, uploadManifestMaxBody)).Decode(&m); err != nil {
+		outcome = httpOutcome(nil, err)
 		log.WithError(err).WithField("upload", id).Warn("upload manifest failed")
+		return nil, errUploadManifestUnavailable
+	}
+	// An index carries both lists as arrays, empty ones included. Without
+	// them a 200 (null, {}, an error object) is some other answer, and read
+	// as an index it would be a live upload of no files and no bytes.
+	if m.Files == nil || m.UIDs == nil {
+		outcome = outcomeError
+		log.WithField("upload", id).Warn("upload manifest failed: not an index")
 		return nil, errUploadManifestUnavailable
 	}
 	r := &Resource{ID: id, Name: m.Name, Type: ResourceTypeSha1, Private: uploads.Owned(id), UIDs: m.UIDs, Reserved: m.Reserved}

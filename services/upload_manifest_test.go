@@ -160,20 +160,29 @@ func TestUploadManifestFailClosed(t *testing.T) {
 		h    http.HandlerFunc
 		prep func(t *testing.T, f *fakeTHP, m *UploadManifest)
 		code int
+		// outcome is the call's label in the upstream metrics
+		outcome string
 	}{
-		{"404", thpAnswer(404, "not found"), nil, 404},
-		{"500", thpAnswer(500, ""), nil, 503},
-		{"403", thpAnswer(403, "wrong api key"), nil, 503},
-		{"429", thpAnswer(429, ""), nil, 503},
-		{"502", thpAnswer(502, ""), nil, 503},
-		{"not json", thpAnswer(200, "not json"), nil, 503},
-		{"slow", slow, func(_ *testing.T, _ *fakeTHP, m *UploadManifest) { m.timeout = 50 * time.Millisecond }, 503},
-		{"closed", thpAnswer(200, uploadManifestJSON), func(_ *testing.T, f *fakeTHP, _ *UploadManifest) { f.Close() }, 503},
+		{"404", thpAnswer(404, "not found"), nil, 404, outcomeNotFound},
+		{"500", thpAnswer(500, ""), nil, 503, outcomeError},
+		{"403", thpAnswer(403, "wrong api key"), nil, 503, outcomeForbidden},
+		{"429", thpAnswer(429, ""), nil, 503, outcomeError},
+		{"502", thpAnswer(502, ""), nil, 503, outcomeError},
+		{"not json", thpAnswer(200, "not json"), nil, 503, outcomeError},
+		// A 200 that is not an index: both lists are arrays in one, even when empty.
+		{"null", thpAnswer(200, "null"), nil, 503, outcomeError},
+		{"empty object", thpAnswer(200, "{}"), nil, 503, outcomeError},
+		{"error object", thpAnswer(200, `{"error":"x"}`), nil, 503, outcomeError},
+		{"no files", thpAnswer(200, `{"name":"N","uids":["`+uidA+`"],"reserved":0}`), nil, 503, outcomeError},
+		{"null files", thpAnswer(200, `{"name":"N","uids":["`+uidA+`"],"files":null}`), nil, 503, outcomeError},
+		{"no uids", thpAnswer(200, `{"name":"N","reserved":0,"files":[]}`), nil, 503, outcomeError},
+		{"slow", slow, func(_ *testing.T, _ *fakeTHP, m *UploadManifest) { m.timeout = 50 * time.Millisecond }, 503, outcomeTimeout},
+		{"closed", thpAnswer(200, uploadManifestJSON), func(_ *testing.T, f *fakeTHP, _ *UploadManifest) { f.Close() }, 503, outcomeError},
 		{"body over the limit", thpAnswer(200, uploadManifestJSON), func(t *testing.T, _ *fakeTHP, _ *UploadManifest) {
 			prev := uploadManifestMaxBody
 			uploadManifestMaxBody = 16
 			t.Cleanup(func() { uploadManifestMaxBody = prev })
-		}, 503},
+		}, 503, outcomeError},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			f := newFakeTHP(t, c.h)
@@ -181,8 +190,11 @@ func TestUploadManifestFailClosed(t *testing.T) {
 			if c.prep != nil {
 				c.prep(t, f, m)
 			}
+			calls := upstreamRequestsTotal.WithLabelValues(upstreamTorrentHTTPProxy, uploadManifestMethod, c.outcome)
+			before := counter(t, calls)
 			_, err := m.Manifest(context.Background(), uploadKind1)
 			require.Error(t, err)
+			assert.Equal(t, 1.0, counter(t, calls)-before, c.outcome)
 			if c.code == 404 {
 				assert.Contains(t, err.Error(), "not found")
 				assert.False(t, errors.Is(err, errUploadManifestUnavailable))
@@ -207,11 +219,14 @@ func TestUploadManifestFailClosed(t *testing.T) {
 // An upload grows while it is listed: every request asks the seeder.
 func TestUploadManifestNoCache(t *testing.T) {
 	h, _, ts, f := uploadWeb(t, false, 200, uploadManifestJSON)
+	ok := upstreamRequestsTotal.WithLabelValues(upstreamTorrentHTTPProxy, uploadManifestMethod, outcomeOK)
+	before := counter(t, ok)
 	for range 2 {
 		rec := send(t, h, "GET", "/resource/"+uploadKind1, "", nil)
 		require.Equal(t, 200, rec.Code, rec.Body.String())
 	}
 	assert.Equal(t, int32(2), f.hits.Load())
+	assert.Equal(t, 2.0, counter(t, ok)-before)
 	ts.AssertNumberOfCalls(t, "Files", 0)
 	ts.AssertNumberOfCalls(t, "Touch", 0)
 }
@@ -379,7 +394,7 @@ func TestUploadResourceNoMagnet(t *testing.T) {
 func TestUploadNoTorrentFile(t *testing.T) {
 	h, _, ts, f := uploadWeb(t, true, 200, uploadManifestJSON)
 	ts.On("Touch", mock.Anything, touchOf(uploadKind0, callerIs("", true)), mock.Anything).
-		Return(nil, status.Error(codes.NotFound, "not found"))
+		Return(nil, status.Error(codes.NotFound, "not found")).Twice()
 
 	rec := send(t, h, "GET", "/resource/"+uploadKind0+".torrent", signed(t, jwt.MapClaims{"uid": uidA}), nil)
 	assert.Equal(t, 404, rec.Code, rec.Body.String())
