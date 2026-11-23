@@ -27,7 +27,7 @@ func tokenOf(t *testing.T, u string) string {
 }
 
 func TestExportPrivateResigned(t *testing.T) {
-	h, w, ts, _ := newPrivateWeb(t, true)
+	h, w, ts, _ := newPrivateWeb(t)
 	cachePrivate(t, w, tokenTestHash, true)
 	ts.On("Touch", mock.Anything, touchOf(tokenTestHash, callerIs(uidA, false)), mock.Anything).Return(&tsp.TouchReply{Access: "allowed"}, nil).Once()
 	in := jwt.MapClaims{"uid": uidA, "role": "free", "sessionID": "s", "domain": "webtor.io", "hash": "x",
@@ -67,7 +67,7 @@ func TestExportNeverInternal(t *testing.T) {
 		{"internal with uid", jwt.MapClaims{"internal": true, "uid": uidA}, uidA, 200},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			h, w, ts, _ := newPrivateWeb(t, true)
+			h, w, ts, _ := newPrivateWeb(t)
 			cachePrivate(t, w, tokenTestHash, true)
 			ts.On("Touch", mock.Anything, touchOf(tokenTestHash, internal), mock.Anything).Return(allowed, nil).Maybe()
 			ts.On("Touch", mock.Anything, touchOf(tokenTestHash, callerIs("", false)), mock.Anything).Return(touchRefused("sign_in")()).Maybe()
@@ -98,62 +98,16 @@ func TestExportNeverInternal(t *testing.T) {
 	}
 }
 
-// Observe: a refusal leaves the links as they were; an allowance re-signs them.
-func TestExportObserveKeepsTokenOnRefusal(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		uid     string
-		touch   func() (*tsp.TouchReply, error)
-		refused float64
-	}{
-		{"no record", uidB, touchRefused("no_record"), 1},
-		{"allowed", uidA, touchOK(&tsp.TouchReply{Access: "allowed"}), 0},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			h, w, ts, _ := newPrivateWeb(t, false)
-			cachePrivate(t, w, tokenTestHash, true)
-			ts.On("Touch", mock.Anything, touchOf(tokenTestHash, callerIs(tc.uid, false)), mock.Anything).Return(tc.touch()).Once()
-			refused := privateRefusedTotal.WithLabelValues(routeExport, reasonNoRecord)
-			before := counter(t, refused)
-			tok := signed(t, jwt.MapClaims{"uid": tc.uid, "role": "free"})
-
-			code, body := tokenGet(t, h, exportTarget, tok, true)
-
-			require.Equal(t, 200, code, body)
-			var urls []string
-			collectURLs(body, &urls)
-			require.NotEmpty(t, urls)
-			for _, u := range urls {
-				got := tokenOf(t, u)
-				if tc.refused > 0 {
-					assert.Equal(t, tok, got, u)
-					continue
-				}
-				assert.NotEqual(t, tok, got, u)
-				claims, err := parseToken(got, tokenTestSecret)
-				require.NoError(t, err)
-				assert.Equal(t, tokenTestHash, claims["hash"])
-			}
-			assert.Equal(t, tc.refused, counter(t, refused)-before)
-			ts.AssertExpectations(t)
-		})
-	}
-}
-
 // Spec negative control: without the marker check rest-api would re-sign for an old store.
 func TestExportOutdatedStoreNoResign(t *testing.T) {
-	for _, mode := range accessModes {
-		t.Run(mode.name, func(t *testing.T) {
-			h, w, ts, _ := newPrivateWeb(t, mode.enforce)
-			cachePrivate(t, w, tokenTestHash, true)
-			ts.On("Touch", mock.Anything, touchOf(tokenTestHash, callerIs(uidA, false)), mock.Anything).Return(&tsp.TouchReply{}, nil).Once()
+	h, w, ts, _ := newPrivateWeb(t)
+	cachePrivate(t, w, tokenTestHash, true)
+	ts.On("Touch", mock.Anything, touchOf(tokenTestHash, callerIs(uidA, false)), mock.Anything).Return(&tsp.TouchReply{}, nil).Once()
 
-			rec := send(t, h, "GET", exportTarget, signed(t, jwt.MapClaims{"uid": uidA}), nil)
+	rec := send(t, h, "GET", exportTarget, signed(t, jwt.MapClaims{"uid": uidA}), nil)
 
-			require.Equal(t, 503, rec.Code, rec.Body.String())
-			assert.Equal(t, codeStoreOutdated, errorBody(t, rec).Code)
-			assert.NotContains(t, rec.Body.String(), `"url"`)
-			ts.AssertExpectations(t)
-		})
-	}
+	require.Equal(t, 503, rec.Code, rec.Body.String())
+	assert.Equal(t, codeStoreOutdated, errorBody(t, rec).Code)
+	assert.NotContains(t, rec.Body.String(), `"url"`)
+	ts.AssertExpectations(t)
 }
