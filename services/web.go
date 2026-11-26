@@ -141,6 +141,12 @@ var errBodyTooLarge = &apiError{
 // @Failure 503 {object} ErrorResponse
 // @Router /resource/ [post]
 func (s *Web) postResource(g *gin.Context) {
+	// A declared length over the cap is refused unread; MaxBytesReader
+	// catches a body without one (chunked).
+	if g.Request.ContentLength > maxResourceBody {
+		g.Error(errBodyTooLarge)
+		return
+	}
 	b := http.MaxBytesReader(g.Writer, g.Request.Body, maxResourceBody)
 	defer b.Close()
 	bb, err := io.ReadAll(b)

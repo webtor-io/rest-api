@@ -20,21 +20,26 @@ import (
 	tsp "github.com/webtor-io/torrent-store/proto"
 )
 
-type zeros struct{}
+// zeros counts the bytes read from it.
+type zeros struct{ n int64 }
 
-func (zeros) Read(p []byte) (int, error) { clear(p); return len(p), nil }
+func (z *zeros) Read(p []byte) (int, error) { clear(p); z.n += int64(len(p)); return len(p), nil }
 
 // A body over maxResourceBody is refused with 413 without being read past
-// the limit or parsed; one of exactly maxResourceBody bytes is still read
-// and parsed (zeros are no torrent: 400).
+// the limit or parsed, and not read at all when its declared length is over;
+// one of exactly maxResourceBody bytes is still read and parsed (zeros are
+// no torrent: 400).
 func TestPostResourceBodyLimit(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		size int64
-		code int
+		name     string
+		size     int64
+		declared bool
+		code     int
+		maxRead  int64
 	}{
-		{"at the limit", maxResourceBody, http.StatusBadRequest},
-		{"over the limit", maxResourceBody + 1, http.StatusRequestEntityTooLarge},
+		{"at the limit", maxResourceBody, true, http.StatusBadRequest, maxResourceBody},
+		{"over the limit, chunked", maxResourceBody + 1, false, http.StatusRequestEntityTooLarge, maxResourceBody + 1},
+		{"over the limit, declared", maxResourceBody + 1, true, http.StatusRequestEntityTooLarge, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			// No mock is set: reaching torrent-store fails the case.
@@ -43,8 +48,14 @@ func TestPostResourceBodyLimit(t *testing.T) {
 			r.Use(w.errorHandler)
 			r.POST("/resource/", w.postResource)
 			rec := httptest.NewRecorder()
-			r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/resource/", io.LimitReader(zeros{}, tc.size)))
+			z := &zeros{}
+			req := httptest.NewRequest(http.MethodPost, "/resource/", io.LimitReader(z, tc.size))
+			if tc.declared {
+				req.ContentLength = tc.size
+			}
+			r.ServeHTTP(rec, req)
 			assert.Equal(t, tc.code, rec.Code, rec.Body.String())
+			assert.LessOrEqual(t, z.n, tc.maxRead, "bytes read")
 			if tc.code == http.StatusRequestEntityTooLarge {
 				assert.JSONEq(t, `{"error":"request body too large: at most 52428800 bytes"}`, rec.Body.String())
 			}
