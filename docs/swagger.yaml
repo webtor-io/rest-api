@@ -254,6 +254,7 @@ paths:
       - '*/*'
       description: |-
         Receives torrent or magnet-uri in request body.
+        A body over 50 MiB is refused with 413.
         If magnet-uri provided instead of torrent, then it tries to fetch torrent from BitTorrent network (timeout 3 minutes).
         A magnet-uri without tr= trackers that resolves to a private (BEP 27) torrent not stored yet is refused with 422 private_magnet: such a torrent only works through trackers, so upload its .torrent file or add your tracker to the magnet.
         A private torrent is answered with "private": true and without its trackers. Who calls is read from the signed X-Token header only.
@@ -290,6 +291,10 @@ paths:
             $ref: '#/definitions/services.ErrorResponse'
         "408":
           description: Request Timeout
+          schema:
+            $ref: '#/definitions/services.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
           schema:
             $ref: '#/definitions/services.ErrorResponse'
         "422":
