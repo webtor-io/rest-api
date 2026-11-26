@@ -553,6 +553,12 @@ func (s *ResourceMap) GetAs(ctx context.Context, b []byte, u Uploader) (res *Res
 	if err != nil {
 		return nil, false, err
 	}
+	return s.getParsedAs(ctx, r, b, u)
+}
+
+// getParsedAs is GetAs for a caller that has parsed b already (r is
+// s.parse(b)): a .torrent is parsed once per request, not twice.
+func (s *ResourceMap) getParsedAs(ctx context.Context, r *Resource, b []byte, u Uploader) (res *Resource, resolvedHere bool, err error) {
 	// The closure may run on another request's goroutine (lazymap lets a
 	// waiter run it while its creator waits for a slot); note is read only
 	// after LazyMap.Get returns.
