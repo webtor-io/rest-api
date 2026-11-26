@@ -103,8 +103,20 @@ func RegisterWebFlags(f []cli.Flag) []cli.Flag {
 	)
 }
 
+// maxResourceBody caps the POST /resource/ body. torrent-store takes at most
+// torrentStoreMaxMsgSize per message, the .torrent included, so a larger body
+// can never be stored. Read whole, it only cost memory before the push
+// failed: parsing a .torrent allocates several times its size.
+const maxResourceBody = torrentStoreMaxMsgSize
+
+var errBodyTooLarge = &apiError{
+	Status: http.StatusRequestEntityTooLarge,
+	Msg:    fmt.Sprintf("request body too large: at most %d bytes", maxResourceBody),
+}
+
 // @Summary Stores resource
 // @Description Receives torrent or magnet-uri in request body.
+// @Description A body over 50 MiB is refused with 413.
 // @Description If magnet-uri provided instead of torrent, then it tries to fetch torrent from BitTorrent network (timeout 3 minutes).
 // @Description A magnet-uri without tr= trackers that resolves to a private (BEP 27) torrent not stored yet is refused with 422 private_magnet: such a torrent only works through trackers, so upload its .torrent file or add your tracker to the magnet.
 // @Description A private torrent is answered with "private": true and without its trackers. Who calls is read from the signed X-Token header only.
@@ -122,16 +134,27 @@ func RegisterWebFlags(f []cli.Flag) []cli.Flag {
 // @Failure 403 {object} ErrorResponse
 // @Failure 404 {object} ErrorResponse
 // @Failure 408 {object} ErrorResponse
+// @Failure 413 {object} ErrorResponse
 // @Failure 422 {object} ErrorResponse
 // @Failure 429 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Failure 503 {object} ErrorResponse
 // @Router /resource/ [post]
 func (s *Web) postResource(g *gin.Context) {
-	b := g.Request.Body
+	// A declared length over the cap is refused unread; MaxBytesReader
+	// catches a body without one (chunked).
+	if g.Request.ContentLength > maxResourceBody {
+		g.Error(errBodyTooLarge)
+		return
+	}
+	b := http.MaxBytesReader(g.Writer, g.Request.Body, maxResourceBody)
 	defer b.Close()
 	bb, err := io.ReadAll(b)
-	if err != nil {
+	var mbe *http.MaxBytesError
+	if errors.As(err, &mbe) {
+		g.Error(errBodyTooLarge)
+		return
+	} else if err != nil {
 		g.AbortWithError(http.StatusInternalServerError, err)
 		return
 	}
@@ -152,7 +175,7 @@ func (s *Web) postResource(g *gin.Context) {
 			g.Error(err)
 			return
 		}
-	} else if res, resolved, err = s.rm.GetAs(ctx, bb, u); err != nil {
+	} else if res, resolved, err = s.rm.getParsedAs(ctx, r, bb, u); err != nil {
 		g.Error(err)
 		return
 	}
