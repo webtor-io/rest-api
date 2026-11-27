@@ -23,7 +23,7 @@ import (
 func NewTestResourceMap() *ResourceMap {
 	ts := NewTorrentStoreMock()
 	m2t := NewMagnet2TorrentMock()
-	rm := NewResourceMap(ts, m2t)
+	rm := NewResourceMap(ts, m2t, nil)
 	return rm
 }
 

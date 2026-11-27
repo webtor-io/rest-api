@@ -20,6 +20,7 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"github.com/webtor-io/lazymap"
 	"github.com/webtor-io/rest-api/docs"
+	"github.com/webtor-io/rest-api/services/uploads"
 )
 
 // @title           Webtor API
@@ -219,7 +220,8 @@ func (s *Web) getResource(g *gin.Context) {
 	// Serve from the lightweight manifest (Files RPC) instead of pulling and
 	// parsing the whole .torrent: this endpoint only needs id/name/structure.
 	// The magnet is synthesized from the infohash — the torrent is already in
-	// the store, so a trackerless magnet resolves fine for webtor.
+	// the store, so a trackerless magnet resolves fine for webtor. An upload
+	// has no magnet: there is no swarm to resolve it from.
 	r, err := s.rm.GetManifest(g.Request.Context(), strings.ToLower(id))
 	if err != nil {
 		g.Error(err)
@@ -230,10 +232,13 @@ func (s *Web) getResource(g *gin.Context) {
 		return
 	}
 	rr := &ResourceResponse{
-		ID:        r.ID,
-		Name:      r.Name,
-		MagnetURI: magnetFromInfoHash(r.ID, r.Name),
-		Private:   r.Private,
+		ID:       r.ID,
+		Name:     r.Name,
+		Private:  r.Private,
+		Reserved: r.Reserved,
+	}
+	if !uploads.HomeHosted(r.ID) {
+		rr.MagnetURI = magnetFromInfoHash(r.ID, r.Name)
 	}
 	s.fillResourceStructure(rr, r)
 	g.PureJSON(http.StatusOK, rr)

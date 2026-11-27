@@ -20,6 +20,10 @@ type ResourceResponse struct {
 	// Private is true for a BEP 27 private torrent. Always present: its
 	// absence must never be read as false.
 	Private bool `json:"private"`
+	// Reserved is set for an upload only: the bytes it holds on its seeder
+	// (finished files plus the declared size of unfinished ones), or the sum
+	// of its files for a copy kept in Vault. A torrent has no such key.
+	Reserved *int64 `json:"reserved,omitempty"`
 	// Verified is "accepted" when a magnet's tracker accepted it and the
 	// record was created by this request; empty otherwise.
 	Verified string `json:"verified,omitempty"`

@@ -2,11 +2,13 @@ package services
 
 import (
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/pkg/errors"
 
+	"github.com/webtor-io/rest-api/services/uploads"
 	tsp "github.com/webtor-io/torrent-store/proto"
 )
 
@@ -34,6 +36,10 @@ var (
 	// ?token= into its links in place of the checked one.
 	errTokenInQuery = &apiError{Status: http.StatusForbidden, Code: codePrivateTorrent,
 		Reason: reasonTokenInQuery, Msg: textPrivateTorrent}
+	errUploadSignIn = &apiError{Status: http.StatusForbidden, Code: codePrivateTorrent,
+		Reason: reasonSignIn, Msg: textPrivateUpload}
+	errUploadNoRecord = &apiError{Status: http.StatusForbidden, Code: codePrivateTorrent,
+		Reason: reasonNoRecord, Msg: textPrivateUpload}
 )
 
 // resignedParams hands every URL builder the re-signed token: GetHeader("X-Token") → token.
@@ -91,7 +97,12 @@ func (s *Web) privateAllowed(g *gin.Context, r *Resource, route string) (ParamGe
 	if route == routeExport {
 		c.Internal = false // the seeder serves a link to its uid only
 	}
-	err := s.rm.touch(g.Request.Context(), r.ID, c)
+	var err error
+	if uploads.HomeHosted(r.ID) {
+		err = ownerAccess(r.UIDs, c) // the seeder's owner file, or Vault's uids once evicted; never the store
+	} else {
+		err = s.rm.touch(g.Request.Context(), r.ID, c)
+	}
 	var ae *apiError
 	if errors.As(err, &ae) && ae.Status == http.StatusForbidden {
 		return g, s.refuse(g, route, ae)
@@ -107,4 +118,20 @@ func (s *Web) privateAllowed(g *gin.Context, r *Resource, route string) (ParamGe
 		return nil, err
 	}
 	return resignedParams{g, tok}, nil
+}
+
+// ownerAccess is the access rule of an upload, as torrent-store's access is
+// of a private torrent: internal is allowed, a caller without a uid is told
+// to sign in, a uid is allowed when it is one of the upload's owners. On
+// export the caller's internal is already dropped.
+func ownerAccess(uids []string, c *tsp.Caller) error {
+	switch {
+	case c.Internal:
+		return nil
+	case c.Uid == "":
+		return errUploadSignIn
+	case slices.Contains(uids, c.Uid):
+		return nil
+	}
+	return errUploadNoRecord
 }

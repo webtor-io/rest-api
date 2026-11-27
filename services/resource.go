@@ -16,6 +16,8 @@ import (
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/webtor-io/lazymap"
 
+	"github.com/webtor-io/rest-api/services/uploads"
+
 	m2tp "github.com/webtor-io/magnet2torrent/proto"
 	tsp "github.com/webtor-io/torrent-store/proto"
 )
@@ -38,6 +40,10 @@ type Resource struct {
 	MagnetURI string
 	Torrent   []byte
 	Private   bool // BEP 27 flag; always known
+	// UIDs are who may read an upload: the uid in its seeder's manifest.
+	UIDs []string `json:"-"`
+	// Reserved is the bytes an upload holds on its seeder; nil for a torrent.
+	Reserved *int64
 }
 
 type File struct {
@@ -96,6 +102,7 @@ type ResourceMap struct {
 	// retry would only resolve to the same refusal. Nothing is stored for
 	// them, so without it every retry costs a magnet2torrent resolution.
 	privateRefusals *lazymap.LazyMap[bool]
+	uploads         *UploadManifest // nil without a proxy target
 }
 
 type TorrentStoreGetter interface {
@@ -106,7 +113,7 @@ type Magnet2TorrentGetter interface {
 	Get() (m2tp.Magnet2TorrentClient, error)
 }
 
-func NewResourceMap(ts TorrentStoreGetter, m2t Magnet2TorrentGetter) *ResourceMap {
+func NewResourceMap(ts TorrentStoreGetter, m2t Magnet2TorrentGetter, up *UploadManifest) *ResourceMap {
 	manifests := lazymap.New[*Resource](&lazymap.Config{
 		Concurrency: 100,
 		Expire:      600 * time.Second,
@@ -131,6 +138,7 @@ func NewResourceMap(ts TorrentStoreGetter, m2t Magnet2TorrentGetter) *ResourceMa
 			Expire:   10 * time.Minute,
 			Capacity: 1000,
 		}),
+		uploads: up,
 	}
 }
 
@@ -585,8 +593,15 @@ func (s *ResourceMap) getParsedAs(ctx context.Context, r *Resource, b []byte, u 
 // manifest — so listing a torrent with thousands of files no longer transfers
 // and parses the full .torrent on every request. infohash must be a hex
 // SHA1; magnet/torrent inputs are not accepted here (they only reach the
-// store-and-resolve POST path, which uses Get).
+// store-and-resolve POST path, which uses Get). An upload's ID is read from
+// its seeder instead (UploadManifest).
 func (s *ResourceMap) GetManifest(ctx context.Context, infohash string) (*Resource, error) {
+	if uploads.HomeHosted(infohash) { // no cache: an upload grows while it is listed
+		if s.uploads == nil {
+			return nil, errUploadManifestUnavailable
+		}
+		return s.uploads.Manifest(ctx, infohash)
+	}
 	return s.manifests.Get(infohash, func() (*Resource, error) {
 		return s.getManifest(ctx, infohash)
 	})

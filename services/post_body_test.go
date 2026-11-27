@@ -103,7 +103,7 @@ func allocated(f func()) uint64 {
 // the piece hashes, all of it live at once while the request ran.
 func TestPostResourceParsesTorrentOnce(t *testing.T) {
 	body := bigPublicTorrent(t, 200_000) // 4 MB of piece hashes
-	rm := NewResourceMap(storeAccepting{}, NewMagnet2TorrentMock())
+	rm := NewResourceMap(storeAccepting{}, NewMagnet2TorrentMock(), nil)
 	read := allocated(func() { _, _ = io.ReadAll(bytes.NewReader(body)) })
 	parse := allocated(func() { _, _ = rm.parse(body) })
 	var rec *httptest.ResponseRecorder

@@ -213,6 +213,12 @@ definitions:
           Private is true for a BEP 27 private torrent. Always present: its
           absence must never be read as false.
         type: boolean
+      reserved:
+        description: |-
+          Reserved is set for an upload only: the bytes it holds on its seeder
+          (finished files plus the declared size of unfinished ones), or the sum
+          of its files for a copy kept in Vault. A torrent has no such key.
+        type: integer
       size:
         description: |-
           Size is the torrent's total size in bytes (sum of all files). Lets
