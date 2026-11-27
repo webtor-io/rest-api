@@ -25,7 +25,7 @@ import (
 
 // newPrivateWeb is production's router (w.routes) over mocks, configured
 // as production is: secret, subdomains, one download node per role.
-func newPrivateWeb(t *testing.T, enforce bool) (h http.Handler, w *Web, ts *TorrentStoreClientMock, m2t *Magnet2TorrentClientMock) {
+func newPrivateWeb(t *testing.T) (h http.Handler, w *Web, ts *TorrentStoreClientMock, m2t *Magnet2TorrentClientMock) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	prevGin, prevLog := gin.DefaultWriter, log.StandardLogger().Out
@@ -52,7 +52,7 @@ func newPrivateWeb(t *testing.T, enforce bool) (h http.Handler, w *Web, ts *Torr
 	rm := NewTestResourceMap()
 	ts, m2t = resourceMapMocks(rm)
 	list := NewList()
-	w = &Web{rm: rm, c: list, st: st, secret: tokenTestSecret, enforce: enforce, vl: newVerifyLimiter(),
+	w = &Web{rm: rm, c: list, st: st, secret: tokenTestSecret, vl: newVerifyLimiter(),
 		e: NewExport(NewDownloadExporter(ub), NewStreamExporter(ub, NewTagBuilder(ub, list)))}
 	r := newRouter()
 	r.Use(w.errorHandler)
@@ -75,7 +75,7 @@ func send(t *testing.T, h http.Handler, method, target, token string, body []byt
 // A private .torrent is pushed by the handler with the caller on every
 // upload: the resource cache, shared between users, never answers it.
 func TestPrivateTorrentUploadPerRequest(t *testing.T) {
-	h, _, ts, _ := newPrivateWeb(t, false)
+	h, _, ts, _ := newPrivateWeb(t)
 	priv := privateTorrent(t)
 	// A loader would look the hash up first: answered, so that path fails on
 	// what it pushes rather than on an unexpected call. None is expected.
@@ -116,7 +116,7 @@ func TestPrivateTorrentUploadAnswers(t *testing.T) {
 		{"updated", &tsp.PushReply{RecordOutcome: "updated"}, nil, 200, "", "updated"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			h, _, ts, _ := newPrivateWeb(t, false)
+			h, _, ts, _ := newPrivateWeb(t)
 			ts.On("Push", mock.Anything, mock.Anything, mock.Anything).Return(tc.reply, tc.err).Once()
 			c := privateUploadsTotal.WithLabelValues(sourceSite, tc.outcome)
 			before := counter(t, c)
@@ -149,7 +149,7 @@ func TestRapidAPIUploadSource(t *testing.T) {
 			{"webtor.io", "site"},
 		} {
 			t.Run(body.name+"/"+tc.domain, func(t *testing.T) {
-				h, _, ts, _ := newPrivateWeb(t, false)
+				h, _, ts, _ := newPrivateWeb(t)
 				// The public .torrent's loader looks the hash up; the private one is not looked up.
 				ts.On("Touch", mock.Anything, mock.Anything, mock.Anything).Return(nil, status.Error(codes.NotFound, "not found")).Maybe()
 				ts.On("Push", mock.Anything, mock.MatchedBy(func(in *tsp.PushRequest) bool {
@@ -169,7 +169,7 @@ func TestRapidAPIUploadSource(t *testing.T) {
 func TestPrivateUploadForgetsBareRefusal(t *testing.T) {
 	priv := privateTorrent(t)
 	ih := mustInfoHash(t, priv)
-	h, w, ts, m2t := newPrivateWeb(t, false)
+	h, w, ts, m2t := newPrivateWeb(t)
 	ts.On("Touch", mock.Anything, mock.Anything, mock.Anything).Return(nil, status.Error(codes.NotFound, "not found"))
 	m2t.On("Magnet2Torrent", mock.Anything, mock.Anything, mock.Anything).Return(&m2tp.Magnet2TorrentReply{Torrent: resolvedPrivate(t)}, nil).Once()
 	ts.On("Push", mock.Anything, mock.Anything, mock.Anything).Return(&tsp.PushReply{RecordOutcome: "inserted"}, nil).Once()

@@ -78,7 +78,7 @@ func assertMagnetPush(t *testing.T, in *tsp.PushRequest, uid, ih string, tier []
 
 // A magnet does not change an existing record.
 func TestKnownPrivateMagnetAllowedSkipsVerify(t *testing.T) {
-	h, _, ts, m2t := newPrivateWeb(t, true)
+	h, _, ts, m2t := newPrivateWeb(t)
 	knownPrivate(t, ts)
 	ih := mustInfoHash(t, privateTorrent(t))
 	ts.On("Touch", mock.Anything, touchOf(ih, callerIs(uidA, false)), mock.Anything).
@@ -103,7 +103,6 @@ func TestKnownPrivateMagnetVerify(t *testing.T) {
 	ih := mustInfoHash(t, privateTorrent(t))
 	for _, tc := range []struct {
 		name       string
-		enforce    bool
 		reply      *m2tp.VerifyReply
 		err        error
 		status     int
@@ -113,17 +112,14 @@ func TestKnownPrivateMagnetVerify(t *testing.T) {
 		verified   bool
 		refused    string // restapi_private_refused_total{post, refused} +1; "" none
 	}{
-		{"accepted", true, &m2tp.VerifyReply{Outcome: "accepted"}, nil, 200, "", "", "", true, true, ""},
-		{"refused", true, &m2tp.VerifyReply{Outcome: "refused", Class: "key"}, nil, 422, "private_tracker_refused", "key", "", false, false, "private_tracker_refused"},
-		{"invalid", true, &m2tp.VerifyReply{Outcome: "invalid"}, nil, 422, "private_no_tracker", "", "", false, false, "private_no_tracker"},
-		{"unreachable", true, &m2tp.VerifyReply{Outcome: "unreachable"}, nil, 503, "private_verify_unavailable", "", "60", false, false, "private_verify_unavailable"},
-		{"old m2t", true, nil, status.Error(codes.Unimplemented, "unknown method Verify"), 503, "private_verify_unavailable", "", "60", false, false, "private_verify_unavailable"},
-		{"observe refused", false, &m2tp.VerifyReply{Outcome: "refused", Class: "key"}, nil, 200, "", "", "", false, false, "private_tracker_refused"},
-		{"observe old m2t", false, nil, status.Error(codes.Unimplemented, "x"), 200, "", "", "", false, false, "private_verify_unavailable"},
-		{"observe accepted", false, &m2tp.VerifyReply{Outcome: "accepted"}, nil, 200, "", "", "", true, true, ""},
+		{"accepted", &m2tp.VerifyReply{Outcome: "accepted"}, nil, 200, "", "", "", true, true, ""},
+		{"refused", &m2tp.VerifyReply{Outcome: "refused", Class: "key"}, nil, 422, "private_tracker_refused", "key", "", false, false, "private_tracker_refused"},
+		{"invalid", &m2tp.VerifyReply{Outcome: "invalid"}, nil, 422, "private_no_tracker", "", "", false, false, "private_no_tracker"},
+		{"unreachable", &m2tp.VerifyReply{Outcome: "unreachable"}, nil, 503, "private_verify_unavailable", "", "60", false, false, "private_verify_unavailable"},
+		{"old m2t", nil, status.Error(codes.Unimplemented, "unknown method Verify"), 503, "private_verify_unavailable", "", "60", false, false, "private_verify_unavailable"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			h, _, ts, m2t := newPrivateWeb(t, tc.enforce)
+			h, _, ts, m2t := newPrivateWeb(t)
 			knownPrivate(t, ts)
 			ts.On("Touch", mock.Anything, touchOf(ih, callerIs(uidA, false)), mock.Anything).
 				Return(touchRefused("no_record")()).Once()
@@ -164,7 +160,7 @@ func TestKnownPrivateMagnetVerify(t *testing.T) {
 // Controller addendum: a magnet with tr= for a stored private hash gets a
 // decision before anything of the resource is answered.
 func TestKnownPrivateMagnetRefusalHidesResource(t *testing.T) {
-	h, _, ts, m2t := newPrivateWeb(t, true)
+	h, _, ts, m2t := newPrivateWeb(t)
 	knownPrivate(t, ts)
 	ih := mustInfoHash(t, privateTorrent(t))
 	ts.On("Touch", mock.Anything, touchOf(ih, callerIs(uidA, false)), mock.Anything).Return(touchRefused("no_record")())
@@ -181,62 +177,52 @@ func TestKnownPrivateMagnetRefusalHidesResource(t *testing.T) {
 
 func TestKnownPrivateMagnetStoreAnswers(t *testing.T) {
 	ih := mustInfoHash(t, privateTorrent(t))
-	for _, mode := range accessModes {
-		for _, tc := range []struct {
-			name        string
-			uid         string
-			touch       func() (*tsp.TouchReply, error)
-			push        error // Push's error; nil: inserted
-			enforceCode int
-			code, why   string
-			refused     string
-			calls       int // Verify and Push calls each
-		}{
-			{"sign in", "", touchRefused("sign_in"), nil, 403, "private_torrent", "sign_in", "sign_in", 0},
-			{"disabled", uidA, func() (*tsp.TouchReply, error) {
-				return nil, infoErr(codes.FailedPrecondition, "torrent-store", "private_unavailable")
-			}, nil, 403, "private_unavailable", "", "private_unavailable", 0},
-			{"push refused", uidA, touchRefused("no_record"), infoErr(codes.InvalidArgument, "torrent-store", "private_too_many_trackers"),
-				422, "private_too_many_trackers", "", "private_too_many_trackers", 1},
-		} {
-			t.Run(mode.name+"/"+tc.name, func(t *testing.T) {
-				h, _, ts, m2t := newPrivateWeb(t, mode.enforce)
-				knownPrivate(t, ts)
-				ts.On("Touch", mock.Anything, touchOf(ih, callerIs(tc.uid, false)), mock.Anything).Return(tc.touch()).Once()
-				verifies := spyVerify(m2t, &m2tp.VerifyReply{Outcome: "accepted"}, nil)
-				var pushes *[]*tsp.PushRequest
-				if tc.push != nil {
-					pushes = spyPush(ts, nil, tc.push)
-				} else {
-					pushes = spyPush(ts, &tsp.PushReply{RecordOutcome: "inserted"}, nil)
-				}
-				refused := privateRefusedTotal.WithLabelValues(routePost, tc.refused)
-				before := counter(t, refused)
-				claims := jwt.MapClaims{}
-				if tc.uid != "" {
-					claims["uid"] = tc.uid
-				}
+	for _, tc := range []struct {
+		name      string
+		uid       string
+		touch     func() (*tsp.TouchReply, error)
+		push      error // Push's error; nil: inserted
+		status    int
+		code, why string
+		refused   string
+		calls     int // Verify and Push calls each
+	}{
+		{"sign in", "", touchRefused("sign_in"), nil, 403, "private_torrent", "sign_in", "sign_in", 0},
+		{"disabled", uidA, func() (*tsp.TouchReply, error) {
+			return nil, infoErr(codes.FailedPrecondition, "torrent-store", "private_unavailable")
+		}, nil, 403, "private_unavailable", "", "private_unavailable", 0},
+		{"push refused", uidA, touchRefused("no_record"), infoErr(codes.InvalidArgument, "torrent-store", "private_too_many_trackers"),
+			422, "private_too_many_trackers", "", "private_too_many_trackers", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, _, ts, m2t := newPrivateWeb(t)
+			knownPrivate(t, ts)
+			ts.On("Touch", mock.Anything, touchOf(ih, callerIs(tc.uid, false)), mock.Anything).Return(tc.touch()).Once()
+			verifies := spyVerify(m2t, &m2tp.VerifyReply{Outcome: "accepted"}, nil)
+			var pushes *[]*tsp.PushRequest
+			if tc.push != nil {
+				pushes = spyPush(ts, nil, tc.push)
+			} else {
+				pushes = spyPush(ts, &tsp.PushReply{RecordOutcome: "inserted"}, nil)
+			}
+			refused := privateRefusedTotal.WithLabelValues(routePost, tc.refused)
+			before := counter(t, refused)
+			claims := jwt.MapClaims{}
+			if tc.uid != "" {
+				claims["uid"] = tc.uid
+			}
 
-				rec := send(t, h, "POST", "/resource/", signed(t, claims), []byte(privateMagnet(t, trA)))
+			rec := send(t, h, "POST", "/resource/", signed(t, claims), []byte(privateMagnet(t, trA)))
 
-				want := 200
-				if mode.enforce {
-					want = tc.enforceCode
-				}
-				require.Equal(t, want, rec.Code, rec.Body.String())
-				if want != 200 {
-					e := errorBody(t, rec)
-					assert.Equal(t, tc.code, e.Code)
-					assert.Equal(t, tc.why, e.Reason)
-				} else {
-					assert.NotContains(t, rec.Body.String(), "verified")
-				}
-				assert.Equal(t, 1.0, counter(t, refused)-before)
-				assert.Len(t, *verifies, tc.calls)
-				assert.Len(t, *pushes, tc.calls)
-				ts.AssertExpectations(t)
-			})
-		}
+			require.Equal(t, tc.status, rec.Code, rec.Body.String())
+			e := errorBody(t, rec)
+			assert.Equal(t, tc.code, e.Code)
+			assert.Equal(t, tc.why, e.Reason)
+			assert.Equal(t, 1.0, counter(t, refused)-before)
+			assert.Len(t, *verifies, tc.calls)
+			assert.Len(t, *pushes, tc.calls)
+			ts.AssertExpectations(t)
+		})
 	}
 }
 
@@ -245,61 +231,49 @@ func TestKnownPrivateMagnetStoreAnswers(t *testing.T) {
 // into the shared copy.
 func TestKnownMagnetOldStore(t *testing.T) {
 	ih := mustInfoHash(t, privateTorrent(t))
-	for _, mode := range accessModes {
-		t.Run(mode.name, func(t *testing.T) {
-			h, _, ts, m2t := newPrivateWeb(t, mode.enforce)
-			knownPrivate(t, ts)
-			ts.On("Touch", mock.Anything, touchOf(ih, callerIs(uidA, false)), mock.Anything).Return(&tsp.TouchReply{}, nil).Once()
-			verifies := spyVerify(m2t, &m2tp.VerifyReply{Outcome: "accepted"}, nil)
-			pushes := spyPush(ts, &tsp.PushReply{RecordOutcome: "inserted"}, nil)
+	h, _, ts, m2t := newPrivateWeb(t)
+	knownPrivate(t, ts)
+	ts.On("Touch", mock.Anything, touchOf(ih, callerIs(uidA, false)), mock.Anything).Return(&tsp.TouchReply{}, nil).Once()
+	verifies := spyVerify(m2t, &m2tp.VerifyReply{Outcome: "accepted"}, nil)
+	pushes := spyPush(ts, &tsp.PushReply{RecordOutcome: "inserted"}, nil)
 
-			rec := send(t, h, "POST", "/resource/", signed(t, jwt.MapClaims{"uid": uidA}), []byte(privateMagnet(t, trA)))
+	rec := send(t, h, "POST", "/resource/", signed(t, jwt.MapClaims{"uid": uidA}), []byte(privateMagnet(t, trA)))
 
-			require.Equal(t, 503, rec.Code, rec.Body.String())
-			assert.Equal(t, codeStoreOutdated, errorBody(t, rec).Code)
-			assert.Empty(t, *verifies)
-			assert.Empty(t, *pushes)
-		})
-	}
+	require.Equal(t, 503, rec.Code, rec.Body.String())
+	assert.Equal(t, codeStoreOutdated, errorBody(t, rec).Code)
+	assert.Empty(t, *verifies)
+	assert.Empty(t, *pushes)
 }
 
 func TestKnownPrivateMagnetRateLimit(t *testing.T) {
 	ih := mustInfoHash(t, privateTorrent(t))
-	for _, mode := range accessModes {
-		t.Run(mode.name, func(t *testing.T) {
-			h, w, ts, m2t := newPrivateWeb(t, mode.enforce)
-			knownPrivate(t, ts)
-			ts.On("Touch", mock.Anything, touchOf(ih, func(c *tsp.Caller) bool { return c != nil && !c.GetInternal() }), mock.Anything).
-				Return(touchRefused("no_record")())
-			verifies := spyVerify(m2t, &m2tp.VerifyReply{Outcome: "refused", Class: "key"}, nil)
-			for i := 0; i < 20; i++ { // the hour's budget of uidA is spent
-				require.True(t, w.vl.allow(uidA, time.Now()), i)
-			}
-			limited := privateRefusedTotal.WithLabelValues(routePost, reasonRateLimited)
-			before := counter(t, limited)
-
-			rec := send(t, h, "POST", "/resource/", signed(t, jwt.MapClaims{"uid": uidA}), []byte(privateMagnet(t, trA)))
-
-			if mode.enforce {
-				require.Equal(t, 429, rec.Code, rec.Body.String())
-				assert.Equal(t, "60", rec.Header().Get("Retry-After"))
-				assert.Empty(t, errorBody(t, rec).Code)
-			} else {
-				require.Equal(t, 200, rec.Code, rec.Body.String())
-			}
-			assert.Equal(t, 1.0, counter(t, limited)-before)
-			assert.Empty(t, *verifies)
-
-			// the limit is per uid
-			send(t, h, "POST", "/resource/", signed(t, jwt.MapClaims{"uid": uidB}), []byte(privateMagnet(t, trA)))
-			assert.Len(t, *verifies, 1)
-		})
+	h, w, ts, m2t := newPrivateWeb(t)
+	knownPrivate(t, ts)
+	ts.On("Touch", mock.Anything, touchOf(ih, func(c *tsp.Caller) bool { return c != nil && !c.GetInternal() }), mock.Anything).
+		Return(touchRefused("no_record")())
+	verifies := spyVerify(m2t, &m2tp.VerifyReply{Outcome: "refused", Class: "key"}, nil)
+	for i := 0; i < 20; i++ { // the hour's budget of uidA is spent
+		require.True(t, w.vl.allow(uidA, time.Now()), i)
 	}
+	limited := privateRefusedTotal.WithLabelValues(routePost, reasonRateLimited)
+	before := counter(t, limited)
+
+	rec := send(t, h, "POST", "/resource/", signed(t, jwt.MapClaims{"uid": uidA}), []byte(privateMagnet(t, trA)))
+
+	require.Equal(t, 429, rec.Code, rec.Body.String())
+	assert.Equal(t, "60", rec.Header().Get("Retry-After"))
+	assert.Empty(t, errorBody(t, rec).Code)
+	assert.Equal(t, 1.0, counter(t, limited)-before)
+	assert.Empty(t, *verifies)
+
+	// the limit is per uid
+	send(t, h, "POST", "/resource/", signed(t, jwt.MapClaims{"uid": uidB}), []byte(privateMagnet(t, trA)))
+	assert.Len(t, *verifies, 1)
 }
 
 // Spec: two users, magnets of one unknown private hash at once — only the loader's owner skips Verify.
 func TestTwoUsersUnknownPrivateMagnetSecondVerifies(t *testing.T) {
-	h, _, ts, m2t := newPrivateWeb(t, true)
+	h, _, ts, m2t := newPrivateWeb(t)
 	ih := mustInfoHash(t, privateTorrent(t))
 	ts.On("Touch", mock.Anything, touchOf(ih, callerIs("", true)), mock.Anything).Return(nil, status.Error(codes.NotFound, "not found"))
 	ts.On("Touch", mock.Anything, touchOf(ih, callerIs(uidB, false)), mock.Anything).Return(touchRefused("no_record")()).Once()

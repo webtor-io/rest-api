@@ -66,7 +66,7 @@ func TestInternalEndpointsNeedInternal(t *testing.T) {
 	} {
 		for _, method := range internalMethods {
 			t.Run(tc.name+"/"+method, func(t *testing.T) {
-				h, _, ts, _ := newPrivateWeb(t, true)
+				h, _, ts, _ := newPrivateWeb(t)
 				target := "/internal/private-trackers/" + uidA
 				if tc.query != "" {
 					target += "?token=" + tc.query
@@ -81,7 +81,7 @@ func TestInternalEndpointsNeedInternal(t *testing.T) {
 }
 
 func TestInternalEndpointsOneRPC(t *testing.T) {
-	h, _, ts, _ := newPrivateWeb(t, true)
+	h, _, ts, _ := newPrivateWeb(t)
 	internal := signed(t, jwt.MapClaims{"internal": true})
 
 	// ?host= is not read: both act on all the user's records.
@@ -122,7 +122,7 @@ func TestInternalEndpointsErrors(t *testing.T) {
 	} {
 		for _, method := range internalMethods {
 			t.Run(tc.name+"/"+method, func(t *testing.T) {
-				h, _, ts, _ := newPrivateWeb(t, true)
+				h, _, ts, _ := newPrivateWeb(t)
 				mockInternal(ts, method, uidA, tc.err)
 				rec := send(t, h, method, "/internal/private-trackers/"+uidA, internal, nil)
 				require.Equal(t, tc.status, rec.Code, rec.Body.String())
@@ -134,7 +134,7 @@ func TestInternalEndpointsErrors(t *testing.T) {
 	}
 	for _, method := range internalMethods {
 		t.Run("bad uid/"+method, func(t *testing.T) {
-			h, _, ts, _ := newPrivateWeb(t, true)
+			h, _, ts, _ := newPrivateWeb(t)
 			mockInternal(ts, method, "XYZ", nil) // reached only without the uid check
 			rec := send(t, h, method, "/internal/private-trackers/XYZ", internal, nil)
 			require.Equal(t, 400, rec.Code, rec.Body.String())
@@ -143,7 +143,7 @@ func TestInternalEndpointsErrors(t *testing.T) {
 		})
 	}
 	t.Run("empty list", func(t *testing.T) {
-		h, _, ts, _ := newPrivateWeb(t, true)
+		h, _, ts, _ := newPrivateWeb(t)
 		mockInternal(ts, "GET", uidA, nil)
 		rec := send(t, h, "GET", "/internal/private-trackers/"+uidA, internal, nil)
 		require.Equal(t, 200, rec.Code, rec.Body.String())
@@ -153,7 +153,7 @@ func TestInternalEndpointsErrors(t *testing.T) {
 
 // The uid in the path never reaches the access log.
 func TestInternalEndpointsNotInAccessLog(t *testing.T) {
-	_, w, ts, _ := newPrivateWeb(t, true) // its cleanup restores gin.DefaultWriter
+	_, w, ts, _ := newPrivateWeb(t) // its cleanup restores gin.DefaultWriter
 	// gin.Logger takes its writer when the router is built.
 	var access bytes.Buffer
 	gin.DefaultWriter = &access

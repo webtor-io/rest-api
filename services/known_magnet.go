@@ -36,8 +36,8 @@ var (
 // it is: a magnet never changes a record, a new key takes the .torrent.
 // Without one, the magnet's own trackers are asked (Verify), and only an
 // accepting tracker makes a record. Refusals go through refuse; a store that
-// cannot answer, or predates records, is a 503 in both modes before anything
-// is checked or pushed: an old store would merge the key into the shared copy.
+// cannot answer, or predates records, is a 503 before anything is checked or
+// pushed: an old store would merge the key into the shared copy.
 func (s *Web) knownPrivateMagnet(g *gin.Context, r *Resource, b []byte, cl callerClaims) (verified string, err error) {
 	ctx := g.Request.Context()
 	err = s.rm.touch(ctx, r.ID, &tsp.Caller{Uid: cl.UID})

@@ -41,9 +41,8 @@ import (
 // @description Optional API key passed as a query parameter. Same semantics as X-Api-Key header (query value takes precedence).
 
 const (
-	webHostFlag              = "host"
-	webPortFlag              = "port"
-	privateAccessEnforceFlag = "private-access-enforce"
+	webHostFlag = "host"
+	webPortFlag = "port"
 )
 
 type Web struct {
@@ -56,29 +55,21 @@ type Web struct {
 	st   *SpeedTest
 	// secret verifies X-Token (EXPORT_API_SECRET): who calls is read from it.
 	secret string
-	// enforce: a refusal of the private access rule is answered; otherwise
-	// it is only counted and the request goes on (PRIVATE_ACCESS_ENFORCE).
-	enforce bool
 	// vl caps the tracker checks (Verify) of a known private magnet per uid.
 	vl *verifyLimiter
 }
 
 func NewWeb(c *cli.Context, rm *ResourceMap, co *List, ex *Export, st *SpeedTest) *Web {
-	w := &Web{
-		host:    c.String(webHostFlag),
-		port:    c.Int(webPortFlag),
-		rm:      rm,
-		c:       co,
-		e:       ex,
-		st:      st,
-		secret:  c.String(exportApiSecretFlag),
-		enforce: c.Bool(privateAccessEnforceFlag),
-		vl:      newVerifyLimiter(),
+	return &Web{
+		host:   c.String(webHostFlag),
+		port:   c.Int(webPortFlag),
+		rm:     rm,
+		c:      co,
+		e:      ex,
+		st:     st,
+		secret: c.String(exportApiSecretFlag),
+		vl:     newVerifyLimiter(),
 	}
-	if w.enforce { // the gauge starts at 0
-		privateEnforce.Set(1)
-	}
-	return w
 }
 
 func RegisterWebFlags(f []cli.Flag) []cli.Flag {
@@ -94,11 +85,6 @@ func RegisterWebFlags(f []cli.Flag) []cli.Flag {
 			Usage:  "http listening port",
 			Value:  8080,
 			EnvVar: "WEB_PORT",
-		},
-		cli.BoolFlag{
-			Name:   privateAccessEnforceFlag,
-			Usage:  "answer refusals of the private torrent access rule; without it they are only counted",
-			EnvVar: "PRIVATE_ACCESS_ENFORCE",
 		},
 	)
 }

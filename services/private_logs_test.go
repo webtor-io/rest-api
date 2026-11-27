@@ -18,7 +18,7 @@ import (
 	tsp "github.com/webtor-io/torrent-store/proto"
 )
 
-// Every private path, refused and let through, in enforce: neither logrus
+// Every private path, refused and let through: neither logrus
 // nor the access log (which prints the errors of a request) carries a
 // tracker or its key.
 func TestPrivatePathsLogNoTrackers(t *testing.T) {
@@ -29,7 +29,7 @@ func TestPrivatePathsLogNoTrackers(t *testing.T) {
 	logrus.SetLevel(logrus.DebugLevel)
 	var access bytes.Buffer // gin.Logger output, as in TestPostResourceMagnetParseErrorHidesTrackers
 
-	_, w, ts, m2t := newPrivateWeb(t, true)
+	_, w, ts, m2t := newPrivateWeb(t)
 	// gin.Logger takes its writer when the router is built; newPrivateWeb's cleanup restores it.
 	gin.DefaultWriter = &access
 	r := newRouter()
