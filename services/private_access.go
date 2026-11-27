@@ -83,22 +83,15 @@ func (s *Web) privateAllowed(g *gin.Context, r *Resource, route string) (ParamGe
 	if !r.Private {
 		return g, nil
 	}
-	// Observe holds private torrents stored before the release; uploads have none.
-	refuse := func(ae *apiError) error {
-		if err := s.refuse(g, route, ae); err != nil || !uploads.HomeHosted(r.ID) {
-			return err
-		}
-		return ae
-	}
 	cl := readClaims(g, s.secret)
 	if route == routeTorrent {
 		if cl.Internal {
 			return g, nil
 		}
-		return g, refuse(errPrivateTorrentFile)
+		return g, s.refuse(g, route, errPrivateTorrentFile)
 	}
 	if g.Query("token") != "" {
-		return g, refuse(errTokenInQuery)
+		return g, s.refuse(g, route, errTokenInQuery)
 	}
 	c := &tsp.Caller{Uid: cl.UID, Internal: cl.Internal}
 	if route == routeExport {
@@ -112,7 +105,7 @@ func (s *Web) privateAllowed(g *gin.Context, r *Resource, route string) (ParamGe
 	}
 	var ae *apiError
 	if errors.As(err, &ae) && ae.Status == http.StatusForbidden {
-		return g, refuse(ae)
+		return g, s.refuse(g, route, ae)
 	}
 	if err != nil {
 		return nil, err
