@@ -102,14 +102,12 @@ var (
 	}, []string{"source", "outcome"})
 
 	// Refusals of the private access rule (and, from the known-magnet path,
-	// of tracker checks), counted in both modes: in observe the request goes
-	// on, so this is what enforce would have refused. No mode label:
-	// restapi_private_enforce says which mode a time window ran in.
+	// of tracker checks), each answered with its error.
 	privateRefusedTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: metricsNamespace,
 		Subsystem: "private",
 		Name:      "refused_total",
-		Help:      "Private torrent requests refused, by route and reason; counted in observe mode too.",
+		Help:      "Private torrent requests refused, by route and reason.",
 	}, []string{"route", "reason"})
 
 	// torrent-store's answer to the per-request access check of a private hash.
@@ -119,13 +117,6 @@ var (
 		Name:      "record_lookups_total",
 		Help:      "Access checks (Touch with the caller) of private torrents in torrent-store, by outcome.",
 	}, []string{"outcome"})
-
-	privateEnforce = promauto.NewGauge(prometheus.GaugeOpts{
-		Namespace: metricsNamespace,
-		Subsystem: "private",
-		Name:      "enforce",
-		Help:      "1 when private torrent access refusals are enforced, 0 when they are only counted.",
-	})
 )
 
 func init() {

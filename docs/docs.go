@@ -21,7 +21,7 @@ const docTemplate = `{
     "paths": {
         "/resource/": {
             "post": {
-                "description": "Receives torrent or magnet-uri in request body.\nIf magnet-uri provided instead of torrent, then it tries to fetch torrent from BitTorrent network (timeout 3 minutes).\nA magnet-uri without tr= trackers that resolves to a private (BEP 27) torrent not stored yet is refused with 422 private_magnet: such a torrent only works through trackers, so upload its .torrent file or add your tracker to the magnet.\nA private torrent is answered with \"private\": true and without its trackers. Who calls is read from the signed X-Token header only.\nA private .torrent or magnet is stored for the caller; torrent-store's refusal is a 422 with code private_needs_account, private_unavailable, private_no_tracker or private_too_many_trackers.\nA magnet with tr= for a stored private torrent goes through when the caller has a record of it. Otherwise its trackers are checked: accepted stores it for the caller and answers \"verified\": \"accepted\"; refused is 422 private_tracker_refused with the tracker's reason; invalid is 422 private_no_tracker; an unavailable check is 503 private_verify_unavailable with Retry-After. Checks are limited per user: 429 with Retry-After.\nAn infohash or a magnet without tr= of a stored private torrent is answered as GET /resource/{resource_id}: 403 private_torrent (reason sign_in, no_record or token_in_query) or 403 private_unavailable.\nA private torrent is answered 503 when torrent-store cannot decide: with code store_outdated if it predates private records, without code if it is unavailable.",
+                "description": "Receives torrent or magnet-uri in request body.\nA body over 50 MiB is refused with 413.\nIf magnet-uri provided instead of torrent, then it tries to fetch torrent from BitTorrent network (timeout 3 minutes).\nA magnet-uri without tr= trackers that resolves to a private (BEP 27) torrent not stored yet is refused with 422 private_magnet: such a torrent only works through trackers, so upload its .torrent file or add your tracker to the magnet.\nA private torrent is answered with \"private\": true and without its trackers. Who calls is read from the signed X-Token header only.\nA private .torrent or magnet is stored for the caller; torrent-store's refusal is a 422 with code private_needs_account, private_unavailable, private_no_tracker or private_too_many_trackers.\nA magnet with tr= for a stored private torrent goes through when the caller has a record of it. Otherwise its trackers are checked: accepted stores it for the caller and answers \"verified\": \"accepted\"; refused is 422 private_tracker_refused with the tracker's reason; invalid is 422 private_no_tracker; an unavailable check is 503 private_verify_unavailable with Retry-After. Checks are limited per user: 429 with Retry-After.\nAn infohash or a magnet without tr= of a stored private torrent is answered as GET /resource/{resource_id}: 403 private_torrent (reason sign_in, no_record or token_in_query) or 403 private_unavailable.\nA private torrent is answered 503 when torrent-store cannot decide: with code store_outdated if it predates private records, without code if it is unavailable.",
                 "consumes": [
                     "*/*"
                 ],
@@ -71,6 +71,12 @@ const docTemplate = `{
                     },
                     "408": {
                         "description": "Request Timeout",
+                        "schema": {
+                            "$ref": "#/definitions/services.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
                         "schema": {
                             "$ref": "#/definitions/services.ErrorResponse"
                         }

@@ -86,10 +86,10 @@ func (f *fakeTHP) manifest(prefix string) *UploadManifest {
 }
 
 // uploadWeb is newPrivateWeb with the manifest of a fake THP answering status and body.
-func uploadWeb(t *testing.T, enforce bool, status int, body string) (http.Handler, *Web, *TorrentStoreClientMock, *fakeTHP) {
+func uploadWeb(t *testing.T, status int, body string) (http.Handler, *Web, *TorrentStoreClientMock, *fakeTHP) {
 	t.Helper()
 	f := newFakeTHP(t, thpAnswer(status, body))
-	h, w, ts, _ := newPrivateWeb(t, enforce)
+	h, w, ts, _ := newPrivateWeb(t)
 	w.rm.uploads = f.manifest("/")
 	return h, w, ts, f
 }
@@ -206,7 +206,7 @@ func TestUploadManifestFailClosed(t *testing.T) {
 				assert.True(t, errors.Is(err, errUploadManifestUnavailable), "%v", err)
 			}
 
-			h, w, ts, _ := newPrivateWeb(t, false)
+			h, w, ts, _ := newPrivateWeb(t)
 			w.rm.uploads = m
 			rec := send(t, h, "GET", "/resource/"+uploadKind1, "", nil)
 			require.Equal(t, c.code, rec.Code, rec.Body.String())
@@ -222,7 +222,7 @@ func TestUploadManifestFailClosed(t *testing.T) {
 
 // An upload grows while it is listed: every request asks the seeder.
 func TestUploadManifestNoCache(t *testing.T) {
-	h, _, ts, f := uploadWeb(t, false, 200, uploadManifestJSON)
+	h, _, ts, f := uploadWeb(t, 200, uploadManifestJSON)
 	ok := upstreamRequestsTotal.WithLabelValues(upstreamTorrentHTTPProxy, uploadManifestMethod, outcomeOK)
 	before := counter(t, ok)
 	for range 2 {
@@ -237,7 +237,7 @@ func TestUploadManifestNoCache(t *testing.T) {
 
 // No proxy target: an upload is a 503, never a lookup in the store.
 func TestUploadManifestNoTarget(t *testing.T) {
-	h, _, ts, _ := newPrivateWeb(t, false)
+	h, _, ts, _ := newPrivateWeb(t)
 	rec := send(t, h, "GET", "/resource/"+uploadKind0, "", nil)
 	require.Equal(t, 503, rec.Code, rec.Body.String())
 	assert.Equal(t, ErrorResponse{Error: "upload manifest unavailable"}, errorBody(t, rec))
@@ -246,7 +246,7 @@ func TestUploadManifestNoTarget(t *testing.T) {
 }
 
 func TestUploadResourceReserved(t *testing.T) {
-	h, w, _, _ := uploadWeb(t, false, 200, uploadManifestJSON)
+	h, w, _, _ := uploadWeb(t, 200, uploadManifestJSON)
 	rec := send(t, h, "GET", "/resource/"+uploadKind1, "", nil)
 	require.Equal(t, 200, rec.Code, rec.Body.String())
 	body := jsonOf(t, rec)
@@ -264,7 +264,7 @@ func TestUploadResourceReserved(t *testing.T) {
 
 // An upload with no file done yet and no part.
 func TestUploadEmptyResource(t *testing.T) {
-	h, _, _, _ := uploadWeb(t, false, 200, `{"kind":"upload","name":"","uids":["`+uidA+`"],"reserved":0,"files":[]}`)
+	h, _, _, _ := uploadWeb(t, 200, `{"kind":"upload","name":"","uids":["`+uidA+`"],"reserved":0,"files":[]}`)
 	rec := send(t, h, "GET", "/resource/"+uploadKind1, "", nil)
 	require.Equal(t, 200, rec.Code, rec.Body.String())
 	body := jsonOf(t, rec)
@@ -292,7 +292,7 @@ func TestUploadManifestErrorsHideToken(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			hook := test.NewGlobal()
-			h, _, _, f := uploadWeb(t, false, 403, "wrong api key")
+			h, _, _, f := uploadWeb(t, 403, "wrong api key")
 			c.prep(f)
 			rec := send(t, h, "GET", "/resource/"+uploadKind0, "", nil)
 			require.Equal(t, 503, rec.Code, rec.Body.String())
@@ -382,7 +382,7 @@ func TestNewUploadManifestFromFlags(t *testing.T) {
 // An upload has no swarm, so it has no magnet; a torrent keeps the one
 // synthesized from its infohash.
 func TestUploadResourceNoMagnet(t *testing.T) {
-	h, w, _, _ := uploadWeb(t, true, 200, uploadManifestJSON)
+	h, w, _, _ := uploadWeb(t, 200, uploadManifestJSON)
 	rec := send(t, h, "GET", "/resource/"+uploadKind1, "", nil)
 	require.Equal(t, 200, rec.Code, rec.Body.String())
 	assert.NotContains(t, rec.Body.String(), "magnet_uri")
@@ -396,7 +396,7 @@ func TestUploadResourceNoMagnet(t *testing.T) {
 // The store path, untouched, answers an upload ID 404 and
 // never reaches the seeder.
 func TestUploadNoTorrentFile(t *testing.T) {
-	h, _, ts, f := uploadWeb(t, true, 200, uploadManifestJSON)
+	h, _, ts, f := uploadWeb(t, 200, uploadManifestJSON)
 	ts.On("Touch", mock.Anything, touchOf(uploadKind0, callerIs("", true)), mock.Anything).
 		Return(nil, status.Error(codes.NotFound, "not found")).Twice()
 

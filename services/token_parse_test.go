@@ -383,7 +383,7 @@ func tokenNodes(t *testing.T) *NodesStat {
 // the manifest cache under tokenTestHash.
 func tokenRouter(t *testing.T) http.Handler {
 	t.Helper()
-	h, w, _, _ := newPrivateWeb(t, false)
+	h, w, _, _ := newPrivateWeb(t)
 	cachePrivate(t, w, tokenTestHash, false)
 	return h
 }

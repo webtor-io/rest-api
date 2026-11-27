@@ -56,9 +56,8 @@ func (p resignedParams) GetHeader(k string) string {
 	return p.ParamGetter.GetHeader(k)
 }
 
-// refuse counts a refusal on route and applies the mode: ae in enforce, nil
-// in observe, where the request goes on as it did before. The label is the
-// code, for private_torrent its reason; a 429 has no code (rate_limited). A
+// refuse counts a refusal on route and returns ae. The label is the code,
+// for private_torrent its reason; a 429 has no code (rate_limited). A
 // sign_in to a request without X-Token is no_token: THP's privacy
 // lookup comes that way, once per node and hash, and would drown the
 // refusals of people. The answer does not change.
@@ -73,17 +72,13 @@ func (s *Web) refuse(g *gin.Context, route string, ae *apiError) error {
 		label = ae.Reason
 	}
 	privateRefusedTotal.WithLabelValues(route, label).Inc()
-	if s.enforce {
-		return ae
-	}
-	return nil
+	return ae
 }
 
 // privateAllowed applies the access rule to r for this request and returns
 // the ParamGetter export must build its URLs with. A public r costs nothing.
-// A refusal goes through refuse; a store that cannot answer is a 503 in both
-// modes. Only an allowance re-signs export's token, in both modes: a refusal
-// in observe keeps the request's token as it was.
+// A refusal goes through refuse; a store that cannot answer is a 503. Only
+// an allowance re-signs export's token.
 func (s *Web) privateAllowed(g *gin.Context, r *Resource, route string) (ParamGetter, error) {
 	if !r.Private {
 		return g, nil
